@@ -1,16 +1,24 @@
 package main
 
+import (
+	"github.com/BurntSushi/toml"
+)
+
 // TestCase ...
 type TestCase struct {
-	entries  Generator
-	strategy Reducer
+	Struct     GenID
+	NumCmds    int
+	Iterations int
+	Algo       []Reducer
 }
 
-func newTestCase(g GenID, r Reducer) *TestCase {
-	return &TestCase{
-		entries:  TranslateGen(g),
-		strategy: r,
+func newTestCase(cfg []byte) (*TestCase, error) {
+	tc := &TestCase{}
+	err := toml.Unmarshal(cfg, tc)
+	if err != nil {
+		return nil, err
 	}
+	return tc, nil
 }
 
 func (tc *TestCase) run() {
