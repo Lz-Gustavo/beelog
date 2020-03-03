@@ -1,4 +1,6 @@
+Name="Teste Lista"
 Struct=0
 NumCmds=100
+NumDiffKeys=10
 Iterations=2
 Algo=[0, 1]

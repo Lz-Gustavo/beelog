@@ -6,10 +6,12 @@ import (
 
 // TestCase ...
 type TestCase struct {
-	Struct     GenID
-	NumCmds    int
-	Iterations int
-	Algo       []Reducer
+	Name        string
+	Struct      GenID
+	NumCmds     int
+	NumDiffKeys int
+	Iterations  int
+	Algo        []Reducer
 }
 
 func newTestCase(cfg []byte) (*TestCase, error) {
@@ -21,5 +23,23 @@ func newTestCase(cfg []byte) (*TestCase, error) {
 	return tc, nil
 }
 
-func (tc *TestCase) run() {
+func (tc *TestCase) run() error {
+
+	gen := TranslateGen(tc.Struct)
+	gen.Seed()
+
+	for i := 0; i < tc.Iterations; i++ {
+		st, err := gen.Gen(tc.NumCmds)
+		if err != nil {
+			return err
+		}
+
+		for _, a := range tc.Algo {
+			err := ApplyReduceAlgo(st, a)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

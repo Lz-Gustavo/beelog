@@ -12,3 +12,17 @@ func TestList(t *testing.T) {
 	}
 	t.Log(l.Str())
 }
+
+func TestInit(t *testing.T) {
+	fs, err := readCurrentDir()
+	if err != nil {
+		t.Log(err.Error())
+		t.FailNow()
+	}
+
+	err = initTestCases(fs)
+	if err != nil {
+		t.Log(err.Error())
+		t.FailNow()
+	}
+}
