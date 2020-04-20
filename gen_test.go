@@ -29,6 +29,7 @@ func TestInit(t *testing.T) {
 
 func TestReduceAlgos(t *testing.T) {
 
+	debugOutput := false
 	testCases := []struct {
 		name     string
 		nCmds    int
@@ -45,10 +46,24 @@ func TestReduceAlgos(t *testing.T) {
 		},
 		{
 			"Case2",
+			20,
+			100,
+			5,
+			Greedy,
+		},
+		{
+			"Case3",
 			20000000,
 			90,
 			10000,
 			Bubbler,
+		},
+		{
+			"Case4",
+			20000,
+			90,
+			10000,
+			Greedy,
 		},
 	}
 
@@ -60,13 +75,21 @@ func TestReduceAlgos(t *testing.T) {
 			t.Log("test", tc.name, "failed with err:", err.Error())
 			t.FailNow()
 		}
-		t.Log("Init:\n", l.Str())
+
+		ln := l.Len()
+		if debugOutput {
+			t.Log("Init:\n", l.Str())
+		}
 
 		err = ApplyReduceAlgo(l, tc.alg)
 		if err != nil {
 			t.Log("test", tc.name, "failed with err:", err.Error())
 			t.FailNow()
 		}
-		t.Log("After Reduce:\n", l.Str())
+
+		t.Log("Removed commands:", ln-l.Len())
+		if debugOutput {
+			t.Log("After Reduce:\n", l.Str())
+		}
 	}
 }

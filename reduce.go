@@ -19,6 +19,9 @@ const (
 )
 
 // ApplyReduceAlgo ...
+// Remember that the list is represented on the oposite order. The first
+// element is the last proposed index in the command log, its neighbor
+// is the prior-indexed command, and so on.
 func ApplyReduceAlgo(s Structure, r Reducer) error {
 	switch st := s.(type) {
 	case *List:
@@ -47,9 +50,6 @@ func ApplyReduceAlgo(s Structure, r Reducer) error {
 }
 
 // BubblerList is the simpliest algorithm.
-// Remember that the list is represented on the oposite order. The first
-// element is the last proposed index in the command log, its neighbor
-// is the prior-indexed command, and so on.
 func BubblerList(l *List) {
 	var (
 		rm bool
@@ -59,12 +59,12 @@ func BubblerList(l *List) {
 
 	for {
 		rm = false
-		for i = l.first; i.next != nil; i = i.next {
+		for i = l.first; i != nil && i.next != nil; i = i.next {
 
 			cmd := i.val.(KVCommand)
 			neigh := i.next.val.(KVCommand)
 
-			// Subsequent write operatios over the same key
+			// Subsequent write operations over the same key
 			if cmd.op == Write && neigh.op == Write && cmd.key == neigh.key {
 				i.next = i.next.next
 				rm = true
@@ -83,9 +83,40 @@ func BubblerList(l *List) {
 }
 
 // MergeList is based on MergeSort algorithm ...
-func MergeList(s *List) {
+func MergeList(l *List) {
 }
 
 // GreedyList returns an optimal solution...
-func GreedyList(s *List) {
+func GreedyList(l *List) {
+	var (
+		rc   int
+		i, j *listNode
+	)
+
+	// iterator i can reach nil value on the last j iteration
+	for i = l.first; i != nil && i.next != nil; i = i.next {
+
+		cmd := i.val.(KVCommand)
+
+		// TODO: remove read operations later
+		if cmd.op != Write {
+			continue
+		}
+
+		priorNeigh := i
+		for j = i.next; j != nil; j = j.next {
+
+			neigh := j.val.(KVCommand)
+
+			// Subsequent write operations over the same key
+			if neigh.op == Write && cmd.key == neigh.key {
+				priorNeigh.next = j.next
+				rc++
+
+			} else {
+				priorNeigh = j
+			}
+		}
+	}
+	l.len -= rc
 }
