@@ -1,6 +1,7 @@
 Name="Teste Lista"
 Struct=0
 NumCmds=100
+PercentWrites=50
 NumDiffKeys=10
 Iterations=2
 Algo=[0, 1]

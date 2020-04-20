@@ -12,7 +12,7 @@ import (
 // Generator ...
 type Generator interface {
 	Seed()
-	Gen(n int) (Structure, error)
+	Gen(n, wrt, dif int) (Structure, error)
 }
 
 // GenID ...
@@ -37,6 +37,24 @@ func TranslateGen(id GenID) Generator {
 	}
 }
 
+// Operation ...
+type Operation uint8
+
+const (
+	// Read ...
+	Read Operation = iota
+
+	// Write ...
+	Write
+)
+
+// KVCommand ...
+type KVCommand struct {
+	op    Operation
+	key   int
+	value uint32
+}
+
 // ListGenerator ...
 type ListGenerator struct {
 	srand rand.Source
@@ -51,15 +69,25 @@ func (lg *ListGenerator) Seed() {
 }
 
 // Gen ...
-func (lg *ListGenerator) Gen(n int) (Structure, error) {
+func (lg *ListGenerator) Gen(n, wrt, dif int) (Structure, error) {
 
 	if lg.r == nil {
 		return nil, errors.New("Not seeded generator, run gen.Seed()")
 	}
 
-	root := &listNode{}
-	root.val = lg.r.Uint32()
+	cmd := KVCommand{
+		key:   lg.r.Intn(dif),
+		value: lg.r.Uint32(),
+	}
+	if cn := lg.r.Intn(100); cn < wrt {
+		cmd.op = Write
+	} else {
+		cmd.op = Read
+	}
 
+	root := &listNode{
+		val: cmd,
+	}
 	l := &List{
 		first: root,
 		tail:  root,
@@ -67,8 +95,19 @@ func (lg *ListGenerator) Gen(n int) (Structure, error) {
 	}
 
 	for i := 1; i < n; i++ {
-		nd := &listNode{}
-		nd.val = lg.r.Uint32()
+		cmd := KVCommand{
+			key:   lg.r.Intn(dif),
+			value: lg.r.Uint32(),
+		}
+		if cn := lg.r.Intn(100); cn < wrt {
+			cmd.op = Write
+		} else {
+			cmd.op = Read
+		}
+
+		nd := &listNode{
+			val: cmd,
+		}
 
 		l.tail.next = nd
 		l.tail = nd

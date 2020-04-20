@@ -5,7 +5,7 @@ import "testing"
 func TestList(t *testing.T) {
 	lg := &ListGenerator{}
 	lg.Seed()
-	l, err := lg.Gen(100)
+	l, err := lg.Gen(100, 50, 100)
 	if err != nil {
 		t.Log(err.Error())
 		t.FailNow()

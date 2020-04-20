@@ -1,17 +1,20 @@
 package main
 
 import (
+	"errors"
+
 	"github.com/BurntSushi/toml"
 )
 
 // TestCase ...
 type TestCase struct {
-	Name        string
-	Struct      GenID
-	NumCmds     int
-	NumDiffKeys int
-	Iterations  int
-	Algo        []Reducer
+	Name          string
+	Struct        GenID
+	NumCmds       int
+	PercentWrites int
+	NumDiffKeys   int
+	Iterations    int
+	Algo          []Reducer
 }
 
 func newTestCase(cfg []byte) (*TestCase, error) {
@@ -20,7 +23,26 @@ func newTestCase(cfg []byte) (*TestCase, error) {
 	if err != nil {
 		return nil, err
 	}
+	if validateTestCase(tc); err != nil {
+		return nil, err
+	}
 	return tc, nil
+}
+
+func validateTestCase(tc *TestCase) error {
+	if tc.NumCmds < 0 || tc.NumDiffKeys < 0 || tc.Iterations < 0 {
+		return errors.New("negative config number")
+	}
+	if tc.PercentWrites < 0 || tc.PercentWrites > 100 {
+		return errors.New("invalid write percentage value")
+	}
+	if tc.Struct != LogDAG && tc.Struct != LogList {
+		return errors.New("unknow log structure")
+	}
+	if len(tc.Algo) < 1 {
+		return errors.New("no reduce algorithm provided")
+	}
+	return nil
 }
 
 func (tc *TestCase) run() error {
@@ -29,7 +51,7 @@ func (tc *TestCase) run() error {
 	gen.Seed()
 
 	for i := 0; i < tc.Iterations; i++ {
-		st, err := gen.Gen(tc.NumCmds)
+		st, err := gen.Gen(tc.NumCmds, tc.PercentWrites, tc.NumDiffKeys)
 		if err != nil {
 			return err
 		}
