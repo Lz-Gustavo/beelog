@@ -3,9 +3,7 @@ package main
 import "testing"
 
 func TestList(t *testing.T) {
-	lg := &ListGenerator{}
-	lg.Seed()
-	l, err := lg.Gen(100, 50, 100)
+	l, err := ListGen(100, 50, 100)
 	if err != nil {
 		t.Log(err.Error())
 		t.FailNow()
@@ -27,7 +25,7 @@ func TestInit(t *testing.T) {
 	}
 }
 
-func TestReduceAlgos(t *testing.T) {
+func TestListReduceAlgos(t *testing.T) {
 
 	debugOutput := false
 	testCases := []struct {
@@ -68,9 +66,7 @@ func TestReduceAlgos(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		lg := &ListGenerator{}
-		lg.Seed()
-		l, err := lg.Gen(tc.nCmds, tc.pWrts, tc.diffKeys)
+		l, err := ListGen(tc.nCmds, tc.pWrts, tc.diffKeys)
 		if err != nil {
 			t.Log("test", tc.name, "failed with err:", err.Error())
 			t.FailNow()

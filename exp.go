@@ -48,10 +48,9 @@ func validateTestCase(tc *TestCase) error {
 func (tc *TestCase) run() error {
 
 	gen := TranslateGen(tc.Struct)
-	gen.Seed()
 
 	for i := 0; i < tc.Iterations; i++ {
-		st, err := gen.Gen(tc.NumCmds, tc.PercentWrites, tc.NumDiffKeys)
+		st, err := gen(tc.NumCmds, tc.PercentWrites, tc.NumDiffKeys)
 		if err != nil {
 			return err
 		}

@@ -1,19 +1,12 @@
 package main
 
 import (
-	"errors"
-	"fmt"
 	"math/rand"
-	"strings"
-	"sync"
 	"time"
 )
 
 // Generator ...
-type Generator interface {
-	Seed()
-	Gen(n, wrt, dif int) (Structure, error)
-}
+type Generator func(n, wrt, dif int) (Structure, error)
 
 // GenID ...
 type GenID int8
@@ -21,6 +14,9 @@ type GenID int8
 const (
 	// LogList ...
 	LogList GenID = iota
+
+	// LogAVL ...
+	LogAVL
 
 	// LogDAG ...
 	LogDAG
@@ -30,7 +26,10 @@ const (
 func TranslateGen(id GenID) Generator {
 	switch id {
 	case LogList:
-		return &ListGenerator{}
+		return ListGen
+
+	case LogAVL:
+		return AVLTreeGen
 
 	default:
 		return nil
@@ -55,31 +54,17 @@ type KVCommand struct {
 	value uint32
 }
 
-// ListGenerator ...
-type ListGenerator struct {
-	srand rand.Source
-	r     *rand.Rand
-}
+// ListGen ...
+func ListGen(n, wrt, dif int) (Structure, error) {
 
-// Seed reseeds the pseudo-random number generator with current system
-// time on UNIX ns format.
-func (lg *ListGenerator) Seed() {
-	lg.srand = rand.NewSource(time.Now().UnixNano())
-	lg.r = rand.New(lg.srand)
-}
-
-// Gen ...
-func (lg *ListGenerator) Gen(n, wrt, dif int) (Structure, error) {
-
-	if lg.r == nil {
-		return nil, errors.New("Not seeded generator, run gen.Seed()")
-	}
+	srand := rand.NewSource(time.Now().UnixNano())
+	r := rand.New(srand)
 
 	cmd := KVCommand{
-		key:   lg.r.Intn(dif),
-		value: lg.r.Uint32(),
+		key:   r.Intn(dif),
+		value: r.Uint32(),
 	}
-	if cn := lg.r.Intn(100); cn < wrt {
+	if cn := r.Intn(100); cn < wrt {
 		cmd.op = Write
 	} else {
 		cmd.op = Read
@@ -96,10 +81,10 @@ func (lg *ListGenerator) Gen(n, wrt, dif int) (Structure, error) {
 
 	for i := 1; i < n; i++ {
 		cmd := KVCommand{
-			key:   lg.r.Intn(dif),
-			value: lg.r.Uint32(),
+			key:   r.Intn(dif),
+			value: r.Uint32(),
 		}
-		if cn := lg.r.Intn(100); cn < wrt {
+		if cn := r.Intn(100); cn < wrt {
 			cmd.op = Write
 		} else {
 			cmd.op = Read
@@ -115,45 +100,7 @@ func (lg *ListGenerator) Gen(n, wrt, dif int) (Structure, error) {
 	return l, nil
 }
 
-// Structure ...
-type Structure interface {
-	Str() string
-	Len() int
-	Hash()
-}
-
-type listNode struct {
-	val  interface{}
-	next *listNode
-}
-
-// List ...
-type List struct {
-	first *listNode
-	tail  *listNode
-	len   int
-	mu    sync.Mutex
-}
-
-// Str returns a string representation of the list state, used for debug purposes.
-func (l *List) Str() string {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	var strs []string
-	for i := l.first; i != nil; i = i.next {
-		strs = append(strs, fmt.Sprintf("%v->", i.val))
-	}
-	return strings.Join(strs, " ")
-}
-
-// Len returns the list length.
-func (l *List) Len() int {
-	return l.len
-}
-
-// Hash tranverses the list returning a hash codification for the entire structure.
-func (l *List) Hash() {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+// AVLTreeGen ...
+func AVLTreeGen(n, wrt, dif int) (Structure, error) {
+	return nil, nil
 }
