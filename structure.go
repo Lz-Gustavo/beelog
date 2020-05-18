@@ -84,11 +84,24 @@ type AVLTreeHT struct {
 // Str implements a BFS on the AVLTree, returning a string representation for the
 // entire struct.
 func (av *AVLTreeHT) Str() string {
-	var nodes []string
-	queue := []*avlTreeNode{}
-	queue = append(queue, av.root)
-	strs := stringRecurBFS(queue, nodes)
-	return strings.Join(strs, ", ")
+	av.resetVisited(av.root)
+	queue := []*avlTreeNode{av.root}
+	nodes := []string{fmt.Sprintf("%v", av.root.ind)}
+
+	for len(queue) != 0 {
+		u := queue[0]
+		queue = queue[1:]
+
+		for _, v := range []*avlTreeNode{u.left, u.right} {
+			if v != nil && !v.visited {
+				v.visited = true
+				str := fmt.Sprintf("%v", v.ind)
+				nodes = append(nodes, str)
+				queue = append(queue, v)
+			}
+		}
+	}
+	return strings.Join(nodes, ", ")
 }
 
 // Len returns the lenght, number of nodes on the tree.
@@ -96,7 +109,8 @@ func (av *AVLTreeHT) Len() int {
 	return av.len
 }
 
-// insert ...
+// insert recursively inserts a node on the tree structure on O(lg n) operations,
+// where 'n' is the number of elements in the tree.
 func (av *AVLTreeHT) insert(node *avlTreeNode) bool {
 	node.height = 1
 	if av.root == nil {
@@ -198,23 +212,6 @@ func (av *AVLTreeHT) resetVisited(root *avlTreeNode) {
 	av.resetVisited(root.right)
 }
 
-func stringRecurBFS(queue []*avlTreeNode, res []string) []string {
-	if len(queue) == 0 {
-		return res
-	}
-
-	str := fmt.Sprintf("%v", queue[0].ind)
-	res = append(res, str)
-
-	if queue[0].left != nil {
-		queue = append(queue, queue[0].left)
-	}
-	if queue[0].right != nil {
-		queue = append(queue, queue[0].right)
-	}
-	return stringRecurBFS(queue[1:], res)
-}
-
 func getHeight(node *avlTreeNode) int {
 	if node == nil {
 		return 0
@@ -234,4 +231,21 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func stringRecurBFS(queue []*avlTreeNode, res []string) []string {
+	if len(queue) == 0 {
+		return res
+	}
+
+	str := fmt.Sprintf("%v", queue[0].ind)
+	res = append(res, str)
+
+	if queue[0].left != nil {
+		queue = append(queue, queue[0].left)
+	}
+	if queue[0].right != nil {
+		queue = append(queue, queue[0].right)
+	}
+	return stringRecurBFS(queue[1:], res)
 }
