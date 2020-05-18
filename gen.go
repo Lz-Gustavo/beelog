@@ -30,7 +30,7 @@ func TranslateGen(id GenID) Generator {
 		return ListGen
 
 	case LogAVL:
-		return AVLTreeGen
+		return AVLTreeHTGen
 
 	default:
 		return nil
@@ -101,8 +101,8 @@ func ListGen(n, wrt, dif int) (Structure, error) {
 	return l, nil
 }
 
-// AVLTreeGen ...
-func AVLTreeGen(n, wrt, dif int) (Structure, error) {
+// AVLTreeHTGen ...
+func AVLTreeHTGen(n, wrt, dif int) (Structure, error) {
 
 	srand := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(srand)
@@ -135,9 +135,15 @@ func AVLTreeGen(n, wrt, dif int) (Structure, error) {
 				cmd: cmd,
 			}
 
+			_, exists := (*avl.aux)[rkey]
+			if !exists {
+				(*avl.aux)[rkey] = &List{}
+			}
+
 			// Add state to the list of updates in that particular key
 			lNode := (*avl.aux)[rkey].push(st)
 			aNode.ptr = lNode
+
 			ok := avl.insert(aNode)
 			if !ok {
 				return nil, errors.New("cannot insert equal keys on BSTs")

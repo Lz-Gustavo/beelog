@@ -42,19 +42,25 @@ func (l *List) push(v interface{}) *listNode {
 	nd := &listNode{
 		val: v,
 	}
-	l.tail.next = nd
-	l.tail = nd
+	if l.tail == nil {
+		l.first = nd
+		l.tail = nd
+	} else {
+		l.tail.next = nd
+		l.tail = nd
+	}
 	l.len++
 	return nd
 }
 
-// State represents a ...
+// State represents a new state, a command execution happening on a certain
+// consensus index, analogous to a logical clock event.
 type State struct {
 	ind int
 	cmd KVCommand
 }
 
-// stateTable stores ...
+// stateTable stores state updates for particular keys.
 type stateTable map[int]*List
 
 type avlTreeNode struct {
@@ -74,12 +80,13 @@ type AVLTreeHT struct {
 	len  int
 }
 
-// Str ...
+// Str implements a BFS on the AVLTree, returning a string representation for the
+// entire struct.
 func (av *AVLTreeHT) Str() string {
 	return ""
 }
 
-// Len ...
+// Len returns the lenght, number of nodes on the tree.
 func (av *AVLTreeHT) Len() int {
 	return av.len
 }
@@ -112,8 +119,9 @@ func (av *AVLTreeHT) leftRotate(root *avlTreeNode) *avlTreeNode {
 	return son
 }
 
+// recurInsert is a recursive procedure for insert operation.
+// adapted from: https://www.geeksforgeeks.org/avl-tree-set-1-insertion/
 func (av *AVLTreeHT) recurInsert(root, node *avlTreeNode) *avlTreeNode {
-
 	if root == nil {
 		return node
 	}

@@ -89,3 +89,12 @@ func TestListReduceAlgos(t *testing.T) {
 		}
 	}
 }
+
+func TestAVLTreeHT(t *testing.T) {
+	avl, err := AVLTreeHTGen(100, 50, 100)
+	if err != nil {
+		t.Log(err.Error())
+		t.FailNow()
+	}
+	t.Log(avl.Str())
+}
