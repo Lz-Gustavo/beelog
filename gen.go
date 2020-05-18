@@ -127,6 +127,7 @@ func AVLTreeHTGen(n, wrt, dif int) (Structure, error) {
 
 			aNode := &avlTreeNode{
 				ind: i,
+				key: rkey,
 			}
 
 			// A write cmd always references a new state on the aux hash table

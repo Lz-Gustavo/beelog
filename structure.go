@@ -68,9 +68,10 @@ type avlTreeNode struct {
 	key int
 	ptr *listNode
 
-	left   *avlTreeNode
-	right  *avlTreeNode
-	height int
+	left    *avlTreeNode
+	right   *avlTreeNode
+	height  int
+	visited bool
 }
 
 // AVLTreeHT ...
@@ -83,12 +84,34 @@ type AVLTreeHT struct {
 // Str implements a BFS on the AVLTree, returning a string representation for the
 // entire struct.
 func (av *AVLTreeHT) Str() string {
-	return ""
+	var nodes []string
+	queue := []*avlTreeNode{}
+	queue = append(queue, av.root)
+	strs := stringRecurBFS(queue, nodes)
+	return strings.Join(strs, ", ")
 }
 
 // Len returns the lenght, number of nodes on the tree.
 func (av *AVLTreeHT) Len() int {
 	return av.len
+}
+
+// insert ...
+func (av *AVLTreeHT) insert(node *avlTreeNode) bool {
+	node.height = 1
+	if av.root == nil {
+		av.root = node
+		av.len++
+		return true
+	}
+
+	rt := av.recurInsert(av.root, node)
+	if rt != nil {
+		av.len++
+		av.root = rt
+		return true
+	}
+	return false
 }
 
 func (av *AVLTreeHT) rightRotate(root *avlTreeNode) *avlTreeNode {
@@ -166,19 +189,30 @@ func (av *AVLTreeHT) recurInsert(root, node *avlTreeNode) *avlTreeNode {
 	return root
 }
 
-func (av *AVLTreeHT) insert(node *avlTreeNode) bool {
-	if av.root == nil {
-		node.height = 1
-		av.len++
-		av.root = node
-		return true
+func (av *AVLTreeHT) resetVisited(root *avlTreeNode) {
+	if root == nil {
+		return
+	}
+	root.visited = false
+	av.resetVisited(root.left)
+	av.resetVisited(root.right)
+}
+
+func stringRecurBFS(queue []*avlTreeNode, res []string) []string {
+	if len(queue) == 0 {
+		return res
 	}
 
-	ok := av.recurInsert(av.root, node) != nil
-	if ok {
-		av.len++
+	str := fmt.Sprintf("%v", queue[0].ind)
+	res = append(res, str)
+
+	if queue[0].left != nil {
+		queue = append(queue, queue[0].left)
 	}
-	return ok
+	if queue[0].right != nil {
+		queue = append(queue, queue[0].right)
+	}
+	return stringRecurBFS(queue[1:], res)
 }
 
 func getHeight(node *avlTreeNode) int {
