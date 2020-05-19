@@ -233,7 +233,7 @@ func IterB1AVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 		u := queue.pop().val.(*avlTreeNode)
 
 		// index in [p, n] interval and key not already satisfied on the log
-		if u.ind >= p && u.ind <= n && !(*avl.aux)[u.key].visited {
+		if !(*avl.aux)[u.key].visited && u.ind >= p && u.ind <= n {
 
 			var phi KVCommand
 			for j := u.ptr; j != nil && j.val.(*State).ind <= n; j = j.next {
@@ -250,6 +250,41 @@ func IterB1AVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 		}
 		if u.ind < n && u.right != nil {
 			queue.push(u.right)
+		}
+	}
+	return log
+}
+
+// IterB1AVLTreeHTWithSlice ...
+func IterB1AVLTreeHTWithSlice(avl *AVLTreeHT, p, n int) []KVCommand {
+
+	avl.resetVisitedValues()
+	log := []KVCommand{}
+	queue := []*avlTreeNode{avl.root}
+
+	for len(queue) != 0 {
+
+		u := queue[0]
+		queue = queue[1:]
+
+		// index in [p, n] interval and key not already satisfied on the log
+		if !(*avl.aux)[u.key].visited && u.ind >= p && u.ind <= n {
+
+			var phi KVCommand
+			for j := u.ptr; j != nil && j.val.(*State).ind <= n; j = j.next {
+				phi = j.val.(*State).cmd
+			}
+
+			// append only the last update of a particular key
+			log = append(log, phi)
+			(*avl.aux)[u.key].visited = true
+		}
+
+		if u.ind > p && u.left != nil {
+			queue = append(queue, u.left)
+		}
+		if u.ind < n && u.right != nil {
+			queue = append(queue, u.right)
 		}
 	}
 	return log
