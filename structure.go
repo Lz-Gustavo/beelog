@@ -21,6 +21,9 @@ type List struct {
 	first *listNode
 	tail  *listNode
 	len   int
+
+	// only used on B1 algorithms ...
+	visited bool
 }
 
 // Str returns a string representation of the list state, used for debug purposes.

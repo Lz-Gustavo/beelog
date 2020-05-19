@@ -146,15 +146,101 @@ func GreedyList(l *List, p, n int) []KVCommand {
 
 // RecurB1AVLTreeHT ...
 func RecurB1AVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
-	return nil
+
+	tbLog := make(map[int]KVCommand, 0)
+	recurB1(avl, avl.root, p, n, tbLog)
+
+	log := []KVCommand{}
+	for _, v := range tbLog {
+		log = append(log, v)
+	}
+	return log
+}
+
+func recurB1(avl *AVLTreeHT, k *avlTreeNode, p, n int, log map[int]KVCommand) {
+	if k == nil {
+		return
+	}
+
+	if k.ind >= p && k.ind <= n {
+
+		// TODO: key updates can be overwritten by older indexes. Review later.
+		log[k.key] = k.ptr.val.(*State).cmd
+	}
+
+	if k.ind > p {
+		recurB1(avl, k.left, p, n, log)
+	}
+	if k.ind < n {
+		recurB1(avl, k.right, p, n, log)
+	}
 }
 
 // GreedyB1AVLTreeHT ...
 func GreedyB1AVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
-	return nil
+	log := []KVCommand{}
+	greedyB1(avl, avl.root, p, n, log)
+	return log
+}
+
+func greedyB1(avl *AVLTreeHT, k *avlTreeNode, p, n int, log []KVCommand) {
+
+	// nil or key already satisfied in the log
+	if k == nil || (*avl.aux)[k.key].visited {
+		return
+	}
+
+	// index in [p, n] interval
+	if k.ind >= p && k.ind <= n {
+
+		var phi KVCommand
+		for j := k.ptr; j != nil && j.val.(*State).ind <= n; j = j.next {
+			phi = j.val.(*State).cmd
+		}
+
+		// append only the last update of a particular key
+		log = append(log, phi)
+		(*avl.aux)[k.key].visited = true
+	}
+	if k.ind > p {
+		greedyB1(avl, k.left, p, n, log)
+	}
+	if k.ind < n {
+		greedyB1(avl, k.right, p, n, log)
+	}
 }
 
 // IterB1AVLTreeHT ...
 func IterB1AVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
-	return nil
+
+	avl.resetVisited(avl.root)
+	queue := []*avlTreeNode{avl.root}
+	log := []KVCommand{}
+
+	for len(queue) != 0 {
+		u := queue[0]
+		queue = queue[1:]
+		u.visited = true
+
+		// index in [p, n] interval and key not already satisfied on the log
+		if u.ind >= p && u.ind <= n && !(*avl.aux)[u.key].visited {
+
+			var phi KVCommand
+			for j := u.ptr; j != nil && j.val.(*State).ind <= n; j = j.next {
+				phi = j.val.(*State).cmd
+			}
+
+			// append only the last update of a particular key
+			log = append(log, phi)
+			(*avl.aux)[u.key].visited = true
+		}
+
+		if u.ind > p {
+			queue = append(queue, u.left)
+		}
+		if u.ind < n {
+			queue = append(queue, u.right)
+		}
+	}
+	return log
 }
