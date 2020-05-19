@@ -48,7 +48,6 @@ func validateTestCase(tc *TestCase) error {
 func (tc *TestCase) run() error {
 
 	gen := TranslateGen(tc.Struct)
-
 	for i := 0; i < tc.Iterations; i++ {
 		st, err := gen(tc.NumCmds, tc.PercentWrites, tc.NumDiffKeys)
 		if err != nil {
@@ -56,7 +55,7 @@ func (tc *TestCase) run() error {
 		}
 
 		for _, a := range tc.Algo {
-			err := ApplyReduceAlgo(st, a)
+			_, err := ApplyReduceAlgo(st, a, 0, st.Len()-1)
 			if err != nil {
 				return err
 			}

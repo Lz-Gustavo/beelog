@@ -40,28 +40,28 @@ func TestListReduceAlgos(t *testing.T) {
 			20,
 			100,
 			5,
-			Bubbler,
+			BubblerLt,
 		},
 		{
 			"Case2",
 			20,
 			100,
 			5,
-			Greedy,
+			GreedyLt,
 		},
 		{
 			"Case3",
 			20000000,
 			90,
 			10000,
-			Bubbler,
+			BubblerLt,
 		},
 		{
 			"Case4",
 			20000,
 			90,
 			10000,
-			Greedy,
+			GreedyLt,
 		},
 	}
 
@@ -77,7 +77,7 @@ func TestListReduceAlgos(t *testing.T) {
 			t.Log("Init:\n", l.Str())
 		}
 
-		err = ApplyReduceAlgo(l, tc.alg)
+		_, err = ApplyReduceAlgo(l, tc.alg, 0, ln-1)
 		if err != nil {
 			t.Log("test", tc.name, "failed with err:", err.Error())
 			t.FailNow()

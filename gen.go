@@ -61,42 +61,38 @@ func ListGen(n, wrt, dif int) (Structure, error) {
 	srand := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(srand)
 
-	cmd := KVCommand{
-		key:   r.Intn(dif),
-		value: r.Uint32(),
-	}
-	if cn := r.Intn(100); cn < wrt {
-		cmd.op = Write
-	} else {
-		cmd.op = Read
-	}
-
-	root := &listNode{
-		val: cmd,
-	}
 	l := &List{
-		first: root,
-		tail:  root,
-		len:   n,
+		len: n,
 	}
 
-	for i := 1; i < n; i++ {
-		cmd := KVCommand{
-			key:   r.Intn(dif),
-			value: r.Uint32(),
-		}
+	for i := 0; i < n; i++ {
+
 		if cn := r.Intn(100); cn < wrt {
-			cmd.op = Write
+			cmd := KVCommand{
+				key:   r.Intn(dif),
+				value: r.Uint32(),
+				op:    Write,
+			}
+			st := State{
+				ind: n - 1 - i,
+				cmd: cmd,
+			}
+			nd := &listNode{
+				val: st,
+			}
+
+			if l.first == nil {
+				l.first = nd
+				l.tail = nd
+
+			} else {
+				l.tail.next = nd
+				l.tail = nd
+			}
+
 		} else {
-			cmd.op = Read
+			continue
 		}
-
-		nd := &listNode{
-			val: cmd,
-		}
-
-		l.tail.next = nd
-		l.tail = nd
 	}
 	return l, nil
 }
