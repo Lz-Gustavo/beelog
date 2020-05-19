@@ -40,7 +40,8 @@ func (l *List) Len() int {
 	return l.len
 }
 
-// Push ...
+// push inserts a new node with the argument value on the list, returning a
+// reference to it.
 func (l *List) push(v interface{}) *listNode {
 	nd := &listNode{
 		val: v,
@@ -54,6 +55,24 @@ func (l *List) push(v interface{}) *listNode {
 	}
 	l.len++
 	return nd
+}
+
+// pop removes and returns the first element on the list.
+func (l *List) pop() *listNode {
+	if l.first == nil {
+		return nil
+	}
+
+	l.len--
+	if l.first == l.tail {
+		aux := l.first
+		l.first = nil
+		l.tail = nil
+		return aux
+	}
+	aux := l.first
+	l.first = aux.next
+	return aux
 }
 
 // State represents a new state, a command execution happening on a certain
@@ -71,10 +90,9 @@ type avlTreeNode struct {
 	key int
 	ptr *listNode
 
-	left    *avlTreeNode
-	right   *avlTreeNode
-	height  int
-	visited bool
+	left   *avlTreeNode
+	right  *avlTreeNode
+	height int
 }
 
 // AVLTreeHT ...
@@ -87,20 +105,18 @@ type AVLTreeHT struct {
 // Str implements a BFS on the AVLTree, returning a string representation for the
 // entire struct.
 func (av *AVLTreeHT) Str() string {
-	av.resetVisited(av.root)
-	queue := []*avlTreeNode{av.root}
 	nodes := []string{fmt.Sprintf("%v", av.root.ind)}
+	queue := &List{}
+	queue.push(av.root)
 
-	for len(queue) != 0 {
-		u := queue[0]
-		queue = queue[1:]
+	for queue.len != 0 {
 
+		u := queue.pop().val.(*avlTreeNode)
 		for _, v := range []*avlTreeNode{u.left, u.right} {
-			if v != nil && !v.visited {
-				v.visited = true
+			if v != nil {
 				str := fmt.Sprintf("%v", v.ind)
 				nodes = append(nodes, str)
-				queue = append(queue, v)
+				queue.push(v)
 			}
 		}
 	}
@@ -206,13 +222,10 @@ func (av *AVLTreeHT) recurInsert(root, node *avlTreeNode) *avlTreeNode {
 	return root
 }
 
-func (av *AVLTreeHT) resetVisited(root *avlTreeNode) {
-	if root == nil {
-		return
+func (av *AVLTreeHT) resetVisitedValues() {
+	for _, list := range *av.aux {
+		list.visited = false
 	}
-	root.visited = false
-	av.resetVisited(root.left)
-	av.resetVisited(root.right)
 }
 
 func getHeight(node *avlTreeNode) int {

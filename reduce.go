@@ -32,8 +32,8 @@ const (
 
 // ApplyReduceAlgo ...
 func ApplyReduceAlgo(s Structure, r Reducer, p, n int) ([]KVCommand, error) {
-	var log []KVCommand
 
+	var log []KVCommand
 	switch st := s.(type) {
 	case *List:
 		switch r {
@@ -57,6 +57,16 @@ func ApplyReduceAlgo(s Structure, r Reducer, p, n int) ([]KVCommand, error) {
 	case *AVLTreeHT:
 		switch r {
 		case RecurB1:
+			log = RecurB1AVLTreeHT(st, p, n)
+			break
+
+		case GreedyB1:
+			log = GreedyB1AVLTreeHT(st, p, n)
+			break
+
+		case IterB1:
+			log = IterB1AVLTreeHT(st, p, n)
+			break
 		}
 	default:
 		return nil, errors.New("unsupported log datastructure")
@@ -148,7 +158,7 @@ func GreedyList(l *List, p, n int) []KVCommand {
 func RecurB1AVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 
 	tbLog := make(map[int]KVCommand, 0)
-	recurB1(avl, avl.root, p, n, tbLog)
+	recurB1(avl, avl.root, p, n, &tbLog)
 
 	log := []KVCommand{}
 	for _, v := range tbLog {
@@ -157,7 +167,7 @@ func RecurB1AVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 	return log
 }
 
-func recurB1(avl *AVLTreeHT, k *avlTreeNode, p, n int, log map[int]KVCommand) {
+func recurB1(avl *AVLTreeHT, k *avlTreeNode, p, n int, log *map[int]KVCommand) {
 	if k == nil {
 		return
 	}
@@ -165,7 +175,7 @@ func recurB1(avl *AVLTreeHT, k *avlTreeNode, p, n int, log map[int]KVCommand) {
 	if k.ind >= p && k.ind <= n {
 
 		// TODO: key updates can be overwritten by older indexes. Review later.
-		log[k.key] = k.ptr.val.(*State).cmd
+		(*log)[k.key] = k.ptr.val.(*State).cmd
 	}
 
 	if k.ind > p {
@@ -179,11 +189,11 @@ func recurB1(avl *AVLTreeHT, k *avlTreeNode, p, n int, log map[int]KVCommand) {
 // GreedyB1AVLTreeHT ...
 func GreedyB1AVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 	log := []KVCommand{}
-	greedyB1(avl, avl.root, p, n, log)
+	greedyB1(avl, avl.root, p, n, &log)
 	return log
 }
 
-func greedyB1(avl *AVLTreeHT, k *avlTreeNode, p, n int, log []KVCommand) {
+func greedyB1(avl *AVLTreeHT, k *avlTreeNode, p, n int, log *[]KVCommand) {
 
 	// nil or key already satisfied in the log
 	if k == nil || (*avl.aux)[k.key].visited {
@@ -199,7 +209,7 @@ func greedyB1(avl *AVLTreeHT, k *avlTreeNode, p, n int, log []KVCommand) {
 		}
 
 		// append only the last update of a particular key
-		log = append(log, phi)
+		*log = append(*log, phi)
 		(*avl.aux)[k.key].visited = true
 	}
 	if k.ind > p {
@@ -213,14 +223,14 @@ func greedyB1(avl *AVLTreeHT, k *avlTreeNode, p, n int, log []KVCommand) {
 // IterB1AVLTreeHT ...
 func IterB1AVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 
-	avl.resetVisited(avl.root)
-	queue := []*avlTreeNode{avl.root}
+	avl.resetVisitedValues()
 	log := []KVCommand{}
+	queue := &List{}
+	queue.push(avl.root)
 
-	for len(queue) != 0 {
-		u := queue[0]
-		queue = queue[1:]
-		u.visited = true
+	for queue.len != 0 {
+
+		u := queue.pop().val.(*avlTreeNode)
 
 		// index in [p, n] interval and key not already satisfied on the log
 		if u.ind >= p && u.ind <= n && !(*avl.aux)[u.key].visited {
@@ -235,11 +245,11 @@ func IterB1AVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 			(*avl.aux)[u.key].visited = true
 		}
 
-		if u.ind > p {
-			queue = append(queue, u.left)
+		if u.ind > p && u.left != nil {
+			queue.push(u.left)
 		}
-		if u.ind < n {
-			queue = append(queue, u.right)
+		if u.ind < n && u.right != nil {
+			queue.push(u.right)
 		}
 	}
 	return log
