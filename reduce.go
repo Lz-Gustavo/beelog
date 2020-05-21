@@ -67,7 +67,12 @@ func ApplyReduceAlgo(s Structure, r Reducer, p, n int) ([]KVCommand, error) {
 		case IterB1:
 			log = IterB1AVLTreeHT(st, p, n)
 			break
+
+		default:
+			return nil, errors.New("unsupported reduce algorithm")
 		}
+		break
+
 	default:
 		return nil, errors.New("unsupported log datastructure")
 	}
@@ -189,6 +194,7 @@ func recurB1(avl *AVLTreeHT, k *avlTreeNode, p, n int, log *map[int]KVCommand) {
 // GreedyB1AVLTreeHT ...
 func GreedyB1AVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 	log := []KVCommand{}
+	avl.resetVisitedValues()
 	greedyB1(avl, avl.root, p, n, &log)
 	return log
 }
@@ -196,12 +202,12 @@ func GreedyB1AVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 func greedyB1(avl *AVLTreeHT, k *avlTreeNode, p, n int, log *[]KVCommand) {
 
 	// nil or key already satisfied in the log
-	if k == nil || (*avl.aux)[k.key].visited {
+	if k == nil {
 		return
 	}
 
-	// index in [p, n] interval
-	if k.ind >= p && k.ind <= n {
+	// index in [p, n] interval and key not already satisfied on the log
+	if !(*avl.aux)[k.key].visited && k.ind >= p && k.ind <= n {
 
 		var phi KVCommand
 		for j := k.ptr; j != nil && j.val.(*State).ind <= n; j = j.next {

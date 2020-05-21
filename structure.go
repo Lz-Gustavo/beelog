@@ -105,7 +105,7 @@ type AVLTreeHT struct {
 // Str implements a BFS on the AVLTree, returning a string representation for the
 // entire struct.
 func (av *AVLTreeHT) Str() string {
-	nodes := []string{fmt.Sprintf("%v", av.root.ind)}
+	nodes := []string{fmt.Sprintf("(%v|%v)", av.root.ind, av.root.key)}
 	queue := &List{}
 	queue.push(av.root)
 
@@ -114,7 +114,7 @@ func (av *AVLTreeHT) Str() string {
 		u := queue.pop().val.(*avlTreeNode)
 		for _, v := range []*avlTreeNode{u.left, u.right} {
 			if v != nil {
-				str := fmt.Sprintf("%v", v.ind)
+				str := fmt.Sprintf("(%v|%v)", v.ind, v.key)
 				nodes = append(nodes, str)
 				queue.push(v)
 			}

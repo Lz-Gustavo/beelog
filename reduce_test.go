@@ -11,6 +11,13 @@ func TestAVLTreeAlgos(t *testing.T) {
 		p, n         int
 	}{
 		{
+			20,
+			100,
+			5,
+			0,
+			20,
+		},
+		{
 			1000,
 			50,
 			100,
