@@ -57,12 +57,20 @@ func TestAVLTreeAlgos(t *testing.T) {
 		t.Logf("GreedyB1 log:\n %v \n", log)
 		t.Log("Removed", tc.numCmds-len(log), "comands")
 
-		log, err = ApplyReduceAlgo(avl, IterB1, tc.p, tc.n)
+		log, err = ApplyReduceAlgo(avl, IterBFS, tc.p, tc.n)
 		if err != nil {
 			t.Log(err.Error())
 			t.FailNow()
 		}
-		t.Logf("IterB1 log:\n %v \n", log)
+		t.Logf("IterBFS log:\n %v \n", log)
+		t.Log("Removed", tc.numCmds-len(log), "comands")
+
+		log, err = ApplyReduceAlgo(avl, IterDFS, tc.p, tc.n)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+		t.Logf("IterDFS log:\n %v \n", log)
 		t.Log("Removed", tc.numCmds-len(log), "comands")
 	}
 }
@@ -114,12 +122,17 @@ func BenchmarkAVLTreeAlgos(b *testing.B) {
 
 			b.ResetTimer()
 			b.Run("IterB1", func(b *testing.B) {
-				IterB1AVLTreeHT(avl, sc.p, sc.n)
+				IterBFSAVLTreeHT(avl, sc.p, sc.n)
 			})
 
 			b.ResetTimer()
 			b.Run("Slices-IterB1", func(b *testing.B) {
-				IterB1AVLTreeHTWithSlice(avl, sc.p, sc.n)
+				IterBFSAVLTreeHTWithSlice(avl, sc.p, sc.n)
+			})
+
+			b.ResetTimer()
+			b.Run("DFS-IterB1", func(b *testing.B) {
+				IterDFSAVLTreeHT(avl, sc.p, sc.n)
 			})
 			b.StopTimer()
 		}
@@ -188,7 +201,7 @@ func BenchmarkIterB1Algorithm(b *testing.B) {
 
 			b.ResetTimer()
 			b.StartTimer()
-			IterB1AVLTreeHT(avl, sc.p, sc.n)
+			IterBFSAVLTreeHT(avl, sc.p, sc.n)
 			b.StopTimer()
 		}
 	}

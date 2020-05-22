@@ -26,8 +26,11 @@ const (
 	// GreedyB1 ...
 	GreedyB1
 
-	// IterB1 ...
-	IterB1
+	// IterBFS ...
+	IterBFS
+
+	// IterDFS ...
+	IterDFS
 )
 
 // ApplyReduceAlgo ...
@@ -64,8 +67,12 @@ func ApplyReduceAlgo(s Structure, r Reducer, p, n int) ([]KVCommand, error) {
 			log = GreedyB1AVLTreeHT(st, p, n)
 			break
 
-		case IterB1:
-			log = IterB1AVLTreeHT(st, p, n)
+		case IterBFS:
+			log = IterBFSAVLTreeHT(st, p, n)
+			break
+
+		case IterDFS:
+			log = IterDFSAVLTreeHT(st, p, n)
 			break
 
 		default:
@@ -226,8 +233,8 @@ func greedyB1(avl *AVLTreeHT, k *avlTreeNode, p, n int, log *[]KVCommand) {
 	}
 }
 
-// IterB1AVLTreeHT ...
-func IterB1AVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
+// IterBFSAVLTreeHT ...
+func IterBFSAVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 
 	avl.resetVisitedValues()
 	log := []KVCommand{}
@@ -261,8 +268,8 @@ func IterB1AVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 	return log
 }
 
-// IterB1AVLTreeHTWithSlice ...
-func IterB1AVLTreeHTWithSlice(avl *AVLTreeHT, p, n int) []KVCommand {
+// IterBFSAVLTreeHTWithSlice ...
+func IterBFSAVLTreeHTWithSlice(avl *AVLTreeHT, p, n int) []KVCommand {
 
 	avl.resetVisitedValues()
 	log := []KVCommand{}
@@ -272,6 +279,41 @@ func IterB1AVLTreeHTWithSlice(avl *AVLTreeHT, p, n int) []KVCommand {
 
 		u := queue[0]
 		queue = queue[1:]
+
+		// index in [p, n] interval and key not already satisfied on the log
+		if !(*avl.aux)[u.key].visited && u.ind >= p && u.ind <= n {
+
+			var phi KVCommand
+			for j := u.ptr; j != nil && j.val.(*State).ind <= n; j = j.next {
+				phi = j.val.(*State).cmd
+			}
+
+			// append only the last update of a particular key
+			log = append(log, phi)
+			(*avl.aux)[u.key].visited = true
+		}
+
+		if u.ind > p && u.left != nil {
+			queue = append(queue, u.left)
+		}
+		if u.ind < n && u.right != nil {
+			queue = append(queue, u.right)
+		}
+	}
+	return log
+}
+
+// IterDFSAVLTreeHT ...
+func IterDFSAVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
+
+	avl.resetVisitedValues()
+	log := []KVCommand{}
+	queue := []*avlTreeNode{avl.root}
+
+	for ln := len(queue); ln != 0; ln = len(queue) {
+
+		u := queue[ln-1]
+		queue = queue[:ln-1]
 
 		// index in [p, n] interval and key not already satisfied on the log
 		if !(*avl.aux)[u.key].visited && u.ind >= p && u.ind <= n {
