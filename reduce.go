@@ -14,23 +14,17 @@ const (
 	// BubblerLt ...
 	BubblerLt Reducer = iota
 
-	// MergeLt ...
-	MergeLt
-
 	// GreedyLt ...
 	GreedyLt
 
-	// RecurB1 ...
-	RecurB1
+	// GreedyAvl ...
+	GreedyAvl
 
-	// GreedyB1 ...
-	GreedyB1
+	// IterBFSAvl ...
+	IterBFSAvl
 
-	// IterBFS ...
-	IterBFS
-
-	// IterDFS ...
-	IterDFS
+	// IterDFSAvl ...
+	IterDFSAvl
 )
 
 // ApplyReduceAlgo ...
@@ -44,10 +38,6 @@ func ApplyReduceAlgo(s Structure, r Reducer, p, n int) ([]KVCommand, error) {
 			log = BubblerList(st, p, n)
 			break
 
-		case MergeLt:
-			log = MergeList(st, p, n)
-			break
-
 		case GreedyLt:
 			log = GreedyList(st, p, n)
 			break
@@ -59,19 +49,15 @@ func ApplyReduceAlgo(s Structure, r Reducer, p, n int) ([]KVCommand, error) {
 
 	case *AVLTreeHT:
 		switch r {
-		case RecurB1:
-			log = RecurB1AVLTreeHT(st, p, n)
+		case GreedyAvl:
+			log = GreedyAVLTreeHT(st, p, n)
 			break
 
-		case GreedyB1:
-			log = GreedyB1AVLTreeHT(st, p, n)
-			break
-
-		case IterBFS:
+		case IterBFSAvl:
 			log = IterBFSAVLTreeHT(st, p, n)
 			break
 
-		case IterDFS:
+		case IterDFSAvl:
 			log = IterDFSAVLTreeHT(st, p, n)
 			break
 
@@ -166,47 +152,15 @@ func GreedyList(l *List, p, n int) []KVCommand {
 	return log
 }
 
-// RecurB1AVLTreeHT ...
-func RecurB1AVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
-
-	tbLog := make(map[int]KVCommand, 0)
-	recurB1(avl, avl.root, p, n, &tbLog)
-
-	log := []KVCommand{}
-	for _, v := range tbLog {
-		log = append(log, v)
-	}
-	return log
-}
-
-func recurB1(avl *AVLTreeHT, k *avlTreeNode, p, n int, log *map[int]KVCommand) {
-	if k == nil {
-		return
-	}
-
-	if k.ind >= p && k.ind <= n {
-
-		// TODO: key updates can be overwritten by older indexes. Review later.
-		(*log)[k.key] = k.ptr.val.(*State).cmd
-	}
-
-	if k.ind > p {
-		recurB1(avl, k.left, p, n, log)
-	}
-	if k.ind < n {
-		recurB1(avl, k.right, p, n, log)
-	}
-}
-
-// GreedyB1AVLTreeHT ...
-func GreedyB1AVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
+// GreedyAVLTreeHT ...
+func GreedyAVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 	log := []KVCommand{}
 	avl.resetVisitedValues()
-	greedyB1(avl, avl.root, p, n, &log)
+	greedyRecur(avl, avl.root, p, n, &log)
 	return log
 }
 
-func greedyB1(avl *AVLTreeHT, k *avlTreeNode, p, n int, log *[]KVCommand) {
+func greedyRecur(avl *AVLTreeHT, k *avlTreeNode, p, n int, log *[]KVCommand) {
 
 	// nil or key already satisfied in the log
 	if k == nil {
@@ -226,10 +180,10 @@ func greedyB1(avl *AVLTreeHT, k *avlTreeNode, p, n int, log *[]KVCommand) {
 		(*avl.aux)[k.key].visited = true
 	}
 	if k.ind > p {
-		greedyB1(avl, k.left, p, n, log)
+		greedyRecur(avl, k.left, p, n, log)
 	}
 	if k.ind < n {
-		greedyB1(avl, k.right, p, n, log)
+		greedyRecur(avl, k.right, p, n, log)
 	}
 }
 
@@ -238,47 +192,12 @@ func IterBFSAVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 
 	avl.resetVisitedValues()
 	log := []KVCommand{}
-	queue := &List{}
-	queue.push(avl.root)
-
-	for queue.len != 0 {
-
-		u := queue.pop().val.(*avlTreeNode)
-
-		// index in [p, n] interval and key not already satisfied on the log
-		if !(*avl.aux)[u.key].visited && u.ind >= p && u.ind <= n {
-
-			var phi KVCommand
-			for j := u.ptr; j != nil && j.val.(*State).ind <= n; j = j.next {
-				phi = j.val.(*State).cmd
-			}
-
-			// append only the last update of a particular key
-			log = append(log, phi)
-			(*avl.aux)[u.key].visited = true
-		}
-
-		if u.ind > p && u.left != nil {
-			queue.push(u.left)
-		}
-		if u.ind < n && u.right != nil {
-			queue.push(u.right)
-		}
-	}
-	return log
-}
-
-// IterBFSAVLTreeHTWithSlice ...
-func IterBFSAVLTreeHTWithSlice(avl *AVLTreeHT, p, n int) []KVCommand {
-
-	avl.resetVisitedValues()
-	log := []KVCommand{}
 	queue := []*avlTreeNode{avl.root}
+	var u *avlTreeNode
 
 	for len(queue) != 0 {
 
-		u := queue[0]
-		queue = queue[1:]
+		u, queue = queue[0], queue[1:]
 
 		// index in [p, n] interval and key not already satisfied on the log
 		if !(*avl.aux)[u.key].visited && u.ind >= p && u.ind <= n {
@@ -309,11 +228,11 @@ func IterDFSAVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 	avl.resetVisitedValues()
 	log := []KVCommand{}
 	queue := []*avlTreeNode{avl.root}
+	var u *avlTreeNode
 
 	for ln := len(queue); ln != 0; ln = len(queue) {
 
-		u := queue[ln-1]
-		queue = queue[:ln-1]
+		u, queue = queue[ln-1], queue[:ln-1]
 
 		// index in [p, n] interval and key not already satisfied on the log
 		if !(*avl.aux)[u.key].visited && u.ind >= p && u.ind <= n {

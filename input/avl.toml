@@ -1,0 +1,8 @@
+Name="Teste"
+Struct=1
+NumCmds=100
+PercentWrites=50
+NumDiffKeys=10
+Iterations=3
+Algo=[2, 3, 4]
+LogFilename=""

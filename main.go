@@ -13,18 +13,17 @@ var (
 )
 
 func init() {
-	fs, err := readCurrentDir()
+	fs, err := parseDir("./input/")
 	if err != nil {
 		log.Fatalln("could not load current dir:", err.Error())
 	}
 	err = initTestCases(fs)
 	if err != nil {
-		log.Fatalln("could not init test cases:", err.Error())
+		log.Fatalln("could not init test case:", err.Error())
 	}
 }
 
 func main() {
-
 	for _, t := range testCases {
 		err := t.run()
 		if err != nil {
@@ -33,9 +32,8 @@ func main() {
 	}
 }
 
-func readCurrentDir() ([]string, error) {
-
-	ent, err := ioutil.ReadDir("./")
+func parseDir(path string) ([]string, error) {
+	ent, err := ioutil.ReadDir(path)
 	if err != nil {
 		return nil, err
 	}
@@ -43,19 +41,19 @@ func readCurrentDir() ([]string, error) {
 	var fns []string
 	for _, f := range ent {
 		if !f.IsDir() && strings.Compare(filepath.Ext(f.Name()), ".toml") == 0 {
-			fns = append(fns, f.Name())
+			fns = append(fns, path+f.Name())
 		}
 	}
 	return fns, nil
 }
 
 func initTestCases(filenames []string) error {
-
 	for _, f := range filenames {
 		fd, err := os.Open(f)
 		if err != nil {
 			return err
 		}
+		defer fd.Close()
 
 		c, err := ioutil.ReadAll(fd)
 		if err != nil {

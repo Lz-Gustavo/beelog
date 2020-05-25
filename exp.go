@@ -9,12 +9,13 @@ import (
 // TestCase ...
 type TestCase struct {
 	Name          string
-	Struct        GenID
+	Struct        StructID
 	NumCmds       int
 	PercentWrites int
 	NumDiffKeys   int
 	Iterations    int
 	Algo          []Reducer
+	LogFilename   string
 }
 
 func newTestCase(cfg []byte) (*TestCase, error) {
@@ -46,12 +47,25 @@ func validateTestCase(tc *TestCase) error {
 }
 
 func (tc *TestCase) run() error {
+	var (
+		st  Structure
+		err error
+	)
 
-	gen := TranslateGen(tc.Struct)
 	for i := 0; i < tc.Iterations; i++ {
-		st, err := gen(tc.NumCmds, tc.PercentWrites, tc.NumDiffKeys)
-		if err != nil {
-			return err
+		if tc.LogFilename == "" {
+			gen := TranslateGen(tc.Struct)
+			st, err = gen(tc.NumCmds, tc.PercentWrites, tc.NumDiffKeys)
+			if err != nil {
+				return err
+			}
+
+		} else {
+			cnt := TranslateConst(tc.Struct)
+			st, err = cnt(tc.LogFilename)
+			if err != nil {
+				return err
+			}
 		}
 
 		for _, a := range tc.Algo {

@@ -2,17 +2,8 @@ package main
 
 import "testing"
 
-func TestList(t *testing.T) {
-	l, err := ListGen(100, 50, 100)
-	if err != nil {
-		t.Log(err.Error())
-		t.FailNow()
-	}
-	t.Log(l.Str())
-}
-
 func TestInit(t *testing.T) {
-	fs, err := readCurrentDir()
+	fs, err := parseDir("./input/")
 	if err != nil {
 		t.Log(err.Error())
 		t.FailNow()
@@ -25,73 +16,26 @@ func TestInit(t *testing.T) {
 	}
 }
 
-func TestListReduceAlgos(t *testing.T) {
-
-	debugOutput := false
-	testCases := []struct {
-		name     string
-		nCmds    int
-		pWrts    int
-		diffKeys int
-		alg      Reducer
-	}{
-		{
-			"Case1",
-			20,
-			100,
-			5,
-			BubblerLt,
-		},
-		{
-			"Case2",
-			20,
-			100,
-			5,
-			GreedyLt,
-		},
-		{
-			"Case3",
-			20000000,
-			90,
-			10000,
-			BubblerLt,
-		},
-		{
-			"Case4",
-			20000,
-			90,
-			10000,
-			GreedyLt,
-		},
+func TestListGen(t *testing.T) {
+	l, err := ListGen(100, 50, 100)
+	if err != nil {
+		t.Log(err.Error())
+		t.FailNow()
 	}
-
-	for _, tc := range testCases {
-		l, err := ListGen(tc.nCmds, tc.pWrts, tc.diffKeys)
-		if err != nil {
-			t.Log("test", tc.name, "failed with err:", err.Error())
-			t.FailNow()
-		}
-
-		ln := l.Len()
-		if debugOutput {
-			t.Log("Init:\n", l.Str())
-		}
-
-		_, err = ApplyReduceAlgo(l, tc.alg, 0, ln-1)
-		if err != nil {
-			t.Log("test", tc.name, "failed with err:", err.Error())
-			t.FailNow()
-		}
-
-		t.Log("Removed commands:", ln-l.Len())
-		if debugOutput {
-			t.Log("After Reduce:\n", l.Str())
-		}
-	}
+	t.Log(l.Str())
 }
 
-func TestAVLTreeHT(t *testing.T) {
+func TestAVLTreeHTGen(t *testing.T) {
 	avl, err := AVLTreeHTGen(100, 50, 100)
+	if err != nil {
+		t.Log(err.Error())
+		t.FailNow()
+	}
+	t.Log(avl.Str())
+}
+
+func TestAVLTreeHTConst(t *testing.T) {
+	avl, err := AVLTreeHTConst("input/logavl.log")
 	if err != nil {
 		t.Log(err.Error())
 		t.FailNow()
