@@ -2,6 +2,10 @@ package main
 
 import (
 	"errors"
+	"fmt"
+	"os"
+	"strconv"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -37,7 +41,7 @@ func validateTestCase(tc *TestCase) error {
 	if tc.PercentWrites < 0 || tc.PercentWrites > 100 {
 		return errors.New("invalid write percentage value")
 	}
-	if tc.Struct != LogDAG && tc.Struct != LogList {
+	if tc.Struct != LogDAG && tc.Struct != LogList && tc.Struct != LogAVL {
 		return errors.New("unknow log structure")
 	}
 	if len(tc.Algo) < 1 {
@@ -51,29 +55,57 @@ func (tc *TestCase) run() error {
 		st  Structure
 		err error
 	)
+	hasInputLog := tc.LogFilename != ""
 
 	for i := 0; i < tc.Iterations; i++ {
-		if tc.LogFilename == "" {
-			gen := TranslateGen(tc.Struct)
-			st, err = gen(tc.NumCmds, tc.PercentWrites, tc.NumDiffKeys)
+		if hasInputLog {
+			cnt := TranslateConst(tc.Struct)
+			st, err = cnt(tc.LogFilename)
 			if err != nil {
 				return err
 			}
+			tc.NumCmds = st.Len()
 
 		} else {
-			cnt := TranslateConst(tc.Struct)
-			st, err = cnt(tc.LogFilename)
+			gen := TranslateGen(tc.Struct)
+			st, err = gen(tc.NumCmds, tc.PercentWrites, tc.NumDiffKeys)
 			if err != nil {
 				return err
 			}
 		}
 
 		for _, a := range tc.Algo {
-			_, err := ApplyReduceAlgo(st, a, 0, st.Len()-1)
+			start := time.Now()
+			log, err := ApplyReduceAlgo(st, a, 0, st.Len()-1)
 			if err != nil {
 				return err
 			}
+			tc.output(i, a, time.Since(start), log)
 		}
+	}
+	return nil
+}
+
+func (tc *TestCase) output(ind int, alg Reducer, dur time.Duration, log []KVCommand) error {
+	fmt.Println(
+		"\n==========",
+		"\nIteration:", ind,
+		"\nAlgorithm:", alg,
+		"\nRemoved cmds:", tc.NumCmds-len(log),
+		"\nDuration:", dur.String(),
+		"\n==========",
+	)
+
+	fname := tc.Name + "-iteration-" + strconv.Itoa(ind) + "-alg-" + strconv.Itoa(int(alg)) + ".out"
+	out, err := os.Create(fname)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = fmt.Fprintf(out, "%v", log)
+	if err != nil {
+		return err
 	}
 	return nil
 }

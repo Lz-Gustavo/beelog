@@ -1,0 +1,5 @@
+Name="Teste-Log"
+Struct=1
+Iterations=1
+Algo=[2, 3, 4]
+LogFilename="input/logavl.log"

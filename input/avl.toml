@@ -5,4 +5,3 @@ PercentWrites=50
 NumDiffKeys=10
 Iterations=3
 Algo=[2, 3, 4]
-LogFilename=""
