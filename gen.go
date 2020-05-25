@@ -116,7 +116,7 @@ func AVLTreeHTGen(n, wrt, dif int) (Structure, error) {
 
 	for i := 0; i < n; i++ {
 
-		// only WRITE nodes are recorded on the tree
+		// only WRITE operations are recorded on the tree
 		if cn := r.Intn(100); cn < wrt {
 
 			rkey := r.Intn(dif)
@@ -159,7 +159,7 @@ func AVLTreeHTGen(n, wrt, dif int) (Structure, error) {
 }
 
 // Constructor ...
-type Constructor func(fn string) (Structure, error)
+type Constructor func(fn string) (Structure, int, error)
 
 // TranslateConst ...
 func TranslateConst(id StructID) Constructor {
@@ -177,15 +177,16 @@ func TranslateConst(id StructID) Constructor {
 }
 
 // AVLTreeHTConst ...
-func AVLTreeHTConst(fn string) (Structure, error) {
+func AVLTreeHTConst(fn string) (Structure, int, error) {
 
 	log, err := parseLog(fn)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	if len(log) == 0 {
-		return nil, errors.New("empty logfile")
+	ln := len(log)
+	if ln == 0 {
+		return nil, 0, errors.New("empty logfile informed")
 	}
 
 	ht := make(stateTable, 0)
@@ -195,6 +196,12 @@ func AVLTreeHTConst(fn string) (Structure, error) {
 	}
 
 	for i, cmd := range log {
+
+		// only WRITE operations are recorded on the tree
+		if cmd.op != Write {
+			continue
+		}
+
 		aNode := &avlTreeNode{
 			ind: i,
 			key: cmd.key,
@@ -217,10 +224,10 @@ func AVLTreeHTConst(fn string) (Structure, error) {
 
 		ok := avl.insert(aNode)
 		if !ok {
-			return nil, errors.New("cannot insert equal keys on BSTs")
+			return nil, 0, errors.New("cannot insert equal keys on BSTs")
 		}
 	}
-	return avl, nil
+	return avl, ln, nil
 }
 
 // parseLog interprets the custom defined log format, equivalent to the string

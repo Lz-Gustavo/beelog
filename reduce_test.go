@@ -49,18 +49,17 @@ func TestListAlgos(t *testing.T) {
 			t.FailNow()
 		}
 
-		ln := l.Len()
 		if debugOutput {
 			t.Log("Init:\n", l.Str())
 		}
 
-		_, err = ApplyReduceAlgo(l, tc.alg, 0, ln-1)
+		_, err = ApplyReduceAlgo(l, tc.alg, 0, tc.nCmds-1)
 		if err != nil {
 			t.Log("test", tc.name, "failed with err:", err.Error())
 			t.FailNow()
 		}
 
-		t.Log("Removed commands:", ln-l.Len())
+		t.Log("Removed commands:", tc.nCmds-1-l.Len())
 		if debugOutput {
 			t.Log("After Reduce:\n", l.Str())
 		}

@@ -54,17 +54,18 @@ func (tc *TestCase) run() error {
 	var (
 		st  Structure
 		err error
+		ln  int
 	)
 	hasInputLog := tc.LogFilename != ""
 
 	for i := 0; i < tc.Iterations; i++ {
 		if hasInputLog {
 			cnt := TranslateConst(tc.Struct)
-			st, err = cnt(tc.LogFilename)
+			st, ln, err = cnt(tc.LogFilename)
 			if err != nil {
 				return err
 			}
-			tc.NumCmds = st.Len()
+			tc.NumCmds = ln
 
 		} else {
 			gen := TranslateGen(tc.Struct)
@@ -76,11 +77,15 @@ func (tc *TestCase) run() error {
 
 		for _, a := range tc.Algo {
 			start := time.Now()
-			log, err := ApplyReduceAlgo(st, a, 0, st.Len()-1)
+			log, err := ApplyReduceAlgo(st, a, 0, tc.NumCmds-1)
 			if err != nil {
 				return err
 			}
-			tc.output(i, a, time.Since(start), log)
+
+			if err = tc.output(i, a, time.Since(start), log); err != nil {
+				fmt.Println("error encountered during log output:", err.Error(), ", ignoring...")
+				continue
+			}
 		}
 	}
 	return nil
@@ -96,16 +101,23 @@ func (tc *TestCase) output(ind int, alg Reducer, dur time.Duration, log []KVComm
 		"\n==========",
 	)
 
-	fname := tc.Name + "-iteration-" + strconv.Itoa(ind) + "-alg-" + strconv.Itoa(int(alg)) + ".out"
-	out, err := os.Create(fname)
+	outF := "./output/"
+	if _, exists := os.Stat(outF); os.IsNotExist(exists) {
+		os.Mkdir(outF, 0744)
+	}
+
+	fn := outF + tc.Name + "-iteration-" + strconv.Itoa(ind) + "-alg-" + strconv.Itoa(int(alg)) + ".out"
+	out, err := os.OpenFile(fn, os.O_CREATE|os.O_WRONLY, 0744)
 	if err != nil {
 		return err
 	}
 	defer out.Close()
 
-	_, err = fmt.Fprintf(out, "%v", log)
-	if err != nil {
-		return err
+	for _, cmd := range log {
+		_, err = fmt.Fprintf(out, "%d %d %v\n", cmd.op, cmd.key, cmd.value)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

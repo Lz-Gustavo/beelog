@@ -35,7 +35,7 @@ func TestAVLTreeHTGen(t *testing.T) {
 }
 
 func TestAVLTreeHTConst(t *testing.T) {
-	avl, err := AVLTreeHTConst("input/logavl.log")
+	avl, _, err := AVLTreeHTConst("input/logavl-a.log")
 	if err != nil {
 		t.Log(err.Error())
 		t.FailNow()

@@ -112,11 +112,6 @@ func BubblerList(l *List, p, n int) []KVCommand {
 	return log
 }
 
-// MergeList is based on MergeSort algorithm ...
-func MergeList(l *List, i, n int) []KVCommand {
-	return nil
-}
-
 // GreedyList returns an optimal solution...
 func GreedyList(l *List, p, n int) []KVCommand {
 	var (
@@ -134,7 +129,7 @@ func GreedyList(l *List, p, n int) []KVCommand {
 
 			neigh := j.val.(State)
 
-			// Subsequent write operations over the same key
+			// subsequent write operations over the same key
 			if st.cmd.key == neigh.cmd.key {
 				priorNeigh.next = j.next
 				rc++
