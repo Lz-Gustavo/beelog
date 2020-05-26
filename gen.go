@@ -64,10 +64,7 @@ func ListGen(n, wrt, dif int) (Structure, error) {
 
 	srand := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(srand)
-
-	l := &List{
-		len: n,
-	}
+	l := &List{len: n}
 
 	for i := 0; i < n; i++ {
 
@@ -77,23 +74,9 @@ func ListGen(n, wrt, dif int) (Structure, error) {
 				value: r.Uint32(),
 				op:    Write,
 			}
-			st := State{
-				ind: n - 1 - i,
-				cmd: cmd,
-			}
-			nd := &listNode{
-				val: st,
-			}
 
-			// empty list, first element
-			if l.first == nil {
-				l.first = nd
-				l.tail = nd
-
-			} else {
-				l.tail.next = nd
-				l.tail = nd
-			}
+			// the list is represented on the oposite order
+			l.Log(n-1-i, cmd)
 
 		} else {
 			continue
@@ -107,48 +90,21 @@ func AVLTreeHTGen(n, wrt, dif int) (Structure, error) {
 
 	srand := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(srand)
-
-	ht := make(stateTable, 0)
-	avl := &AVLTreeHT{
-		aux: &ht,
-		len: 0,
-	}
+	avl := NewAVLTreeHT()
 
 	for i := 0; i < n; i++ {
 
 		// only WRITE operations are recorded on the tree
 		if cn := r.Intn(100); cn < wrt {
-
-			rkey := r.Intn(dif)
 			cmd := KVCommand{
-				key:   rkey,
+				key:   r.Intn(dif),
 				value: r.Uint32(),
 				op:    Write,
 			}
 
-			aNode := &avlTreeNode{
-				ind: i,
-				key: rkey,
-			}
-
-			// A write cmd always references a new state on the aux hash table
-			st := &State{
-				ind: i,
-				cmd: cmd,
-			}
-
-			_, exists := (*avl.aux)[rkey]
-			if !exists {
-				(*avl.aux)[rkey] = &List{}
-			}
-
-			// Add state to the list of updates in that particular key
-			lNode := (*avl.aux)[rkey].push(st)
-			aNode.ptr = lNode
-
-			ok := avl.insert(aNode)
-			if !ok {
-				return nil, errors.New("cannot insert equal keys on BSTs")
+			err := avl.Log(i, cmd)
+			if err != nil {
+				return nil, err
 			}
 
 		} else {
@@ -188,43 +144,13 @@ func AVLTreeHTConst(fn string) (Structure, int, error) {
 	if ln == 0 {
 		return nil, 0, errors.New("empty logfile informed")
 	}
-
-	ht := make(stateTable, 0)
-	avl := &AVLTreeHT{
-		aux: &ht,
-		len: 0,
-	}
+	avl := NewAVLTreeHT()
 
 	for i, cmd := range log {
 
-		// only WRITE operations are recorded on the tree
-		if cmd.op != Write {
-			continue
-		}
-
-		aNode := &avlTreeNode{
-			ind: i,
-			key: cmd.key,
-		}
-
-		// A write cmd always references a new state on the aux hash table
-		st := &State{
-			ind: i,
-			cmd: cmd,
-		}
-
-		_, exists := (*avl.aux)[cmd.key]
-		if !exists {
-			(*avl.aux)[cmd.key] = &List{}
-		}
-
-		// Add state to the list of updates in that particular key
-		lNode := (*avl.aux)[cmd.key].push(st)
-		aNode.ptr = lNode
-
-		ok := avl.insert(aNode)
-		if !ok {
-			return nil, 0, errors.New("cannot insert equal keys on BSTs")
+		err := avl.Log(i, cmd)
+		if err != nil {
+			return nil, 0, err
 		}
 	}
 	return avl, ln, nil

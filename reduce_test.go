@@ -1,6 +1,13 @@
 package main
 
-import "testing"
+import (
+	"fmt"
+	"math/rand"
+	"runtime"
+	"sync"
+	"testing"
+	"time"
+)
 
 func TestListAlgos(t *testing.T) {
 
@@ -202,5 +209,188 @@ func BenchmarkAVLTreeAlgos(b *testing.B) {
 			})
 			b.StopTimer()
 		}
+	}
+}
+
+// run with:
+// go test -run none -bench BenchmarkAlgosThroughput -benchtime 1ns -benchmem -v
+func BenchmarkAlgosThroughput(b *testing.B) {
+
+	b.SetParallelism(runtime.NumCPU())
+	numCommands, diffKeys, writePercent := 100000, 100, 50
+	log := make(chan KVCommand, numCommands)
+
+	// dummy goroutine that creates a random log of commands
+	go createRandomLog(numCommands, diffKeys, writePercent, log)
+
+	// deploy the different workers, each implementing a diff recov protocol
+	chA := make(chan KVCommand, 0)
+	chB := make(chan KVCommand, 0)
+	chC := make(chan KVCommand, 0)
+
+	wg := &sync.WaitGroup{}
+	mu := &sync.Mutex{}
+	wg.Add(3)
+
+	go runAlgorithm(GreedyAvl, chA, numCommands, mu, wg)
+	go runAlgorithm(IterBFSAvl, chB, numCommands, mu, wg)
+	go runAlgorithm(IterDFSAvl, chC, numCommands, mu, wg)
+
+	// fan-out that output to the different goroutines
+	go splitIntoWorkers(log, chA, chB, chC)
+
+	// close the input log channel once all algorithms are executed
+	wg.Wait()
+	close(log)
+}
+
+func createRandomLog(n, dif, wrt int, out chan<- KVCommand) {
+
+	srand := rand.NewSource(time.Now().UnixNano())
+	r := rand.New(srand)
+
+	for i := 0; i < n; i++ {
+		cmd := KVCommand{
+			key: r.Intn(dif),
+		}
+
+		// WRITE operation
+		if cn := r.Intn(100); cn < wrt {
+			cmd.value = r.Uint32()
+			cmd.op = Write
+
+		} else {
+			cmd.op = Read
+		}
+		out <- cmd
+	}
+
+	// indicates the last command in the log, forcing consumer goroutines to halt
+	out <- KVCommand{}
+}
+
+func splitIntoWorkers(src <-chan KVCommand, wrks ...chan<- KVCommand) {
+	for {
+		select {
+		case cmd, ok := <-src:
+			if !ok {
+				return
+			}
+			for _, ch := range wrks {
+				// avoid blocking receive on the sync ch
+				go func(dest chan<- KVCommand, c KVCommand) {
+					dest <- c
+				}(ch, cmd)
+			}
+		}
+	}
+}
+
+func runAlgorithm(alg Reducer, log <-chan KVCommand, n int, mu *sync.Mutex, wg *sync.WaitGroup) {
+
+	avl := NewAVLTreeHT()
+	i := 0
+	defer wg.Done()
+
+	start := time.Now()
+	for {
+		select {
+		case cmd, ok := <-log:
+			if !ok {
+				return
+			}
+
+			if i < n {
+				avl.Log(i, cmd)
+				i++
+
+			} else {
+				// finished logging
+				goto BREAK
+			}
+		}
+	}
+
+BREAK:
+	// elapsed time to interpret the sequence of commands and construct the tree struct
+	construct := time.Since(start)
+
+	var (
+		fn  string
+		out []KVCommand
+	)
+
+	switch alg {
+	case GreedyAvl:
+		start = time.Now()
+		out = GreedyAVLTreeHT(avl, 0, n)
+
+		// elapsed time to recovery the entire log
+		recov := time.Since(start)
+
+		mu.Lock()
+		defer mu.Unlock()
+
+		fmt.Println(
+			"\n====================",
+			"\n=== RecurGreedy Benchmark",
+			"\nConstruct Time:", construct,
+			"\nRecovery Time:", recov,
+			"\nRemoved cmds:", n-len(out),
+			"\n====================",
+		)
+		fn = "output/recurgreedy-bench.out"
+		break
+
+	case IterBFSAvl:
+		start = time.Now()
+		out = IterBFSAVLTreeHT(avl, 0, n)
+
+		// elapsed time to recovery the entire log
+		recov := time.Since(start)
+
+		mu.Lock()
+		defer mu.Unlock()
+
+		fmt.Println(
+			"\n====================",
+			"\n=== IterBFS Benchmark",
+			"\nConstruct Time:", construct,
+			"\nRecovery Time:", recov,
+			"\nRemoved cmds:", n-len(out),
+			"\n====================",
+		)
+		fn = "output/iterbfs-bench.out"
+		break
+
+	case IterDFSAvl:
+		start = time.Now()
+		out = IterDFSAVLTreeHT(avl, 0, n)
+
+		// elapsed time to recovery the entire log
+		recov := time.Since(start)
+
+		mu.Lock()
+		defer mu.Unlock()
+
+		fmt.Println(
+			"\n====================",
+			"\n=== IterDFS Benchmark",
+			"\nConstruct Time:", construct,
+			"\nRecovery Time:", recov,
+			"\nRemoved cmds:", n-len(out),
+			"\n====================",
+		)
+		fn = "output/iterdfs-bench.out"
+		break
+
+	default:
+		fmt.Println("unrecognized algorithm '", alg, "' provided")
+		return
+	}
+
+	err := dumpLogIntoFile("./output/", fn, out)
+	if err != nil {
+		fmt.Println(err.Error())
 	}
 }

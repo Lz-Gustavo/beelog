@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -9,6 +10,7 @@ import (
 type Structure interface {
 	Str() string
 	Len() int
+	Log(index int, cmd KVCommand) error
 }
 
 type listNode struct {
@@ -40,12 +42,28 @@ func (l *List) Len() int {
 	return l.len
 }
 
+// Log ...
+func (l *List) Log(index int, cmd KVCommand) error {
+	if cmd.op != Write {
+		return nil
+	}
+	st := State{
+		ind: index,
+		cmd: cmd,
+	}
+
+	l.push(st)
+	return nil
+}
+
 // push inserts a new node with the argument value on the list, returning a
 // reference to it.
 func (l *List) push(v interface{}) *listNode {
 	nd := &listNode{
 		val: v,
 	}
+
+	// empty list, first element
 	if l.tail == nil {
 		l.first = nd
 		l.tail = nd
@@ -102,6 +120,15 @@ type AVLTreeHT struct {
 	len  int
 }
 
+// NewAVLTreeHT ...
+func NewAVLTreeHT() *AVLTreeHT {
+	ht := make(stateTable, 0)
+	return &AVLTreeHT{
+		aux: &ht,
+		len: 0,
+	}
+}
+
 // Str implements a BFS on the AVLTree, returning a string representation for the
 // entire struct.
 func (av *AVLTreeHT) Str() string {
@@ -126,6 +153,39 @@ func (av *AVLTreeHT) Str() string {
 // Len returns the lenght, number of nodes on the tree.
 func (av *AVLTreeHT) Len() int {
 	return av.len
+}
+
+// Log ...
+func (av *AVLTreeHT) Log(index int, cmd KVCommand) error {
+	if cmd.op != Write {
+		return nil
+	}
+
+	aNode := &avlTreeNode{
+		ind: index,
+		key: cmd.key,
+	}
+
+	// a write cmd always references a new state on the aux hash table
+	st := &State{
+		ind: index,
+		cmd: cmd,
+	}
+
+	_, exists := (*av.aux)[cmd.key]
+	if !exists {
+		(*av.aux)[cmd.key] = &List{}
+	}
+
+	// add state to the list of updates in that particular key
+	lNode := (*av.aux)[cmd.key].push(st)
+	aNode.ptr = lNode
+
+	ok := av.insert(aNode)
+	if !ok {
+		return errors.New("cannot insert equal keys on BSTs")
+	}
+	return nil
 }
 
 // insert recursively inserts a node on the tree structure on O(lg n) operations,

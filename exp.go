@@ -93,21 +93,31 @@ func (tc *TestCase) run() error {
 
 func (tc *TestCase) output(ind int, alg Reducer, dur time.Duration, log []KVCommand) error {
 	fmt.Println(
-		"\n==========",
+		"\n====================",
+		"\n====", tc.Name,
 		"\nIteration:", ind,
 		"\nAlgorithm:", alg,
 		"\nRemoved cmds:", tc.NumCmds-len(log),
 		"\nDuration:", dur.String(),
-		"\n==========",
+		"\n====================",
 	)
 
 	outF := "./output/"
-	if _, exists := os.Stat(outF); os.IsNotExist(exists) {
-		os.Mkdir(outF, 0744)
+	fn := outF + tc.Name + "-iteration-" + strconv.Itoa(ind) + "-alg-" + strconv.Itoa(int(alg)) + ".out"
+
+	err := dumpLogIntoFile(outF, fn, log)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func dumpLogIntoFile(folder, name string, log []KVCommand) error {
+	if _, exists := os.Stat(folder); os.IsNotExist(exists) {
+		os.Mkdir(folder, 0744)
 	}
 
-	fn := outF + tc.Name + "-iteration-" + strconv.Itoa(ind) + "-alg-" + strconv.Itoa(int(alg)) + ".out"
-	out, err := os.OpenFile(fn, os.O_CREATE|os.O_WRONLY, 0744)
+	out, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY, 0744)
 	if err != nil {
 		return err
 	}
