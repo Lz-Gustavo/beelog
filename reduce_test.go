@@ -227,17 +227,19 @@ func BenchmarkAlgosThroughput(b *testing.B) {
 	chA := make(chan KVCommand, 0)
 	chB := make(chan KVCommand, 0)
 	chC := make(chan KVCommand, 0)
+	chD := make(chan KVCommand, 0)
 
 	wg := &sync.WaitGroup{}
 	mu := &sync.Mutex{}
-	wg.Add(3)
+	wg.Add(4)
 
+	go runTraditionalLog(chD, numCommands, mu, wg)
 	go runAlgorithm(GreedyAvl, chA, numCommands, mu, wg)
 	go runAlgorithm(IterBFSAvl, chB, numCommands, mu, wg)
 	go runAlgorithm(IterDFSAvl, chC, numCommands, mu, wg)
 
 	// fan-out that output to the different goroutines
-	go splitIntoWorkers(log, chA, chB, chC)
+	go splitIntoWorkers(log, chA, chB, chC, chD)
 
 	// close the input log channel once all algorithms are executed
 	wg.Wait()
@@ -331,13 +333,12 @@ BREAK:
 		mu.Lock()
 		defer mu.Unlock()
 
-		fmt.Println(
+		fmt.Print(
 			"\n====================",
 			"\n=== RecurGreedy Benchmark",
-			"\nConstruct Time:", construct,
-			"\nRecovery Time:", recov,
-			"\nRemoved cmds:", n-len(out),
-			"\n====================",
+			"\nRemoved cmds: ", n-len(out),
+			"\nConstruct Time: ", construct,
+			"\nCompactation Time: ", recov,
 		)
 		fn = "output/recurgreedy-bench.out"
 		break
@@ -352,13 +353,12 @@ BREAK:
 		mu.Lock()
 		defer mu.Unlock()
 
-		fmt.Println(
+		fmt.Print(
 			"\n====================",
 			"\n=== IterBFS Benchmark",
-			"\nConstruct Time:", construct,
-			"\nRecovery Time:", recov,
-			"\nRemoved cmds:", n-len(out),
-			"\n====================",
+			"\nRemoved cmds: ", n-len(out),
+			"\nConstruct Time: ", construct,
+			"\nCompactation Time: ", recov,
 		)
 		fn = "output/iterbfs-bench.out"
 		break
@@ -373,13 +373,12 @@ BREAK:
 		mu.Lock()
 		defer mu.Unlock()
 
-		fmt.Println(
+		fmt.Print(
 			"\n====================",
 			"\n=== IterDFS Benchmark",
-			"\nConstruct Time:", construct,
-			"\nRecovery Time:", recov,
-			"\nRemoved cmds:", n-len(out),
-			"\n====================",
+			"\nRemoved cmds: ", n-len(out),
+			"\nConstruct Time: ", construct,
+			"\nCompactation Time: ", recov,
 		)
 		fn = "output/iterdfs-bench.out"
 		break
@@ -389,8 +388,62 @@ BREAK:
 		return
 	}
 
+	start = time.Now()
 	err := dumpLogIntoFile("./output/", fn, out)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
+
+	dump := time.Since(start)
+	fmt.Println(
+		"\nInstallation Time:", dump,
+		"\n====================",
+	)
+}
+
+func runTraditionalLog(log <-chan KVCommand, n int, mu *sync.Mutex, wg *sync.WaitGroup) {
+
+	logfile := make([]KVCommand, 0, n)
+	i := 0
+	defer wg.Done()
+
+	start := time.Now()
+	for {
+		select {
+		case cmd, ok := <-log:
+			if !ok {
+				return
+			}
+
+			if i < n {
+				logfile = append(logfile, cmd)
+				i++
+
+			} else {
+				// finished logging
+				goto BREAK
+			}
+		}
+	}
+
+BREAK:
+	construct := time.Since(start)
+	fn := "output/traditionallog-bench.out"
+
+	start = time.Now()
+	err := dumpLogIntoFile("./output/", fn, logfile)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+	dump := time.Since(start)
+
+	fmt.Println(
+		"\n====================",
+		"\n=== Traditional Log Benchmark",
+		"\nRemoved cmds:", n-len(logfile),
+		"\nConstruct Time:", construct,
+		"\nCompactation Time: -",
+		"\nInstallation Time:", dump,
+		"\n====================",
+	)
 }
