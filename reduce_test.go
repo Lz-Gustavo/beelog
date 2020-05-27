@@ -217,7 +217,7 @@ func BenchmarkAVLTreeAlgos(b *testing.B) {
 func BenchmarkAlgosThroughput(b *testing.B) {
 
 	b.SetParallelism(runtime.NumCPU())
-	numCommands, diffKeys, writePercent := 100000, 100, 50
+	numCommands, diffKeys, writePercent := 1000000, 1000, 50
 	log := make(chan KVCommand, numCommands)
 
 	// dummy goroutine that creates a random log of commands
@@ -318,68 +318,38 @@ BREAK:
 	construct := time.Since(start)
 
 	var (
-		fn  string
-		out []KVCommand
+		fn, id string
+		out    []KVCommand
+
+		// elapsed time to recovery the entire log
+		recov time.Duration
 	)
 
 	switch alg {
 	case GreedyAvl:
 		start = time.Now()
 		out = GreedyAVLTreeHT(avl, 0, n)
+		recov = time.Since(start)
 
-		// elapsed time to recovery the entire log
-		recov := time.Since(start)
-
-		mu.Lock()
-		defer mu.Unlock()
-
-		fmt.Print(
-			"\n====================",
-			"\n=== RecurGreedy Benchmark",
-			"\nRemoved cmds: ", n-len(out),
-			"\nConstruct Time: ", construct,
-			"\nCompactation Time: ", recov,
-		)
+		id = "RecurGreedy Benchmark"
 		fn = "output/recurgreedy-bench.out"
 		break
 
 	case IterBFSAvl:
 		start = time.Now()
 		out = IterBFSAVLTreeHT(avl, 0, n)
+		recov = time.Since(start)
 
-		// elapsed time to recovery the entire log
-		recov := time.Since(start)
-
-		mu.Lock()
-		defer mu.Unlock()
-
-		fmt.Print(
-			"\n====================",
-			"\n=== IterBFS Benchmark",
-			"\nRemoved cmds: ", n-len(out),
-			"\nConstruct Time: ", construct,
-			"\nCompactation Time: ", recov,
-		)
+		id = "IterBFS Benchmark"
 		fn = "output/iterbfs-bench.out"
 		break
 
 	case IterDFSAvl:
 		start = time.Now()
 		out = IterDFSAVLTreeHT(avl, 0, n)
+		recov = time.Since(start)
 
-		// elapsed time to recovery the entire log
-		recov := time.Since(start)
-
-		mu.Lock()
-		defer mu.Unlock()
-
-		fmt.Print(
-			"\n====================",
-			"\n=== IterDFS Benchmark",
-			"\nRemoved cmds: ", n-len(out),
-			"\nConstruct Time: ", construct,
-			"\nCompactation Time: ", recov,
-		)
+		id = "IterDFS Benchmark"
 		fn = "output/iterdfs-bench.out"
 		break
 
@@ -393,12 +363,19 @@ BREAK:
 	if err != nil {
 		fmt.Println(err.Error())
 	}
-
 	dump := time.Since(start)
+
+	mu.Lock()
 	fmt.Println(
+		"\n====================",
+		"\n===", id,
+		"\nRemoved cmds: ", n-len(out),
+		"\nConstruction Time: ", construct,
+		"\nCompactation Time: ", recov,
 		"\nInstallation Time:", dump,
 		"\n====================",
 	)
+	mu.Unlock()
 }
 
 func runTraditionalLog(log <-chan KVCommand, n int, mu *sync.Mutex, wg *sync.WaitGroup) {
@@ -437,13 +414,15 @@ BREAK:
 	}
 	dump := time.Since(start)
 
+	mu.Lock()
 	fmt.Println(
 		"\n====================",
 		"\n=== Traditional Log Benchmark",
 		"\nRemoved cmds:", n-len(logfile),
-		"\nConstruct Time:", construct,
+		"\nConstruction Time:", construct,
 		"\nCompactation Time: -",
 		"\nInstallation Time:", dump,
 		"\n====================",
 	)
+	mu.Unlock()
 }
