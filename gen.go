@@ -10,24 +10,37 @@ import (
 	"time"
 )
 
-// StructID ...
+// StructID indexes different structs available for log representation.
 type StructID int8
 
 const (
-	// LogList ...
+	// LogList maps the command log as a simple linked list, represented
+	// on the oposite order. The first element is the last proposed index
+	// in the command log, its neighbor is the prior-indexed command, and
+	// so on.
 	LogList StructID = iota
 
-	// LogAVL ...
+	// LogAVL represents the log as an underlying AVL tree, indexed by
+	// command indexes. Only state updates (i.e. Writes) are mapped into
+	// nodes. An auxilary hash table is used to track state updates over
+	// a particular key.
 	LogAVL
 
-	// LogDAG ...
+	// LogDAG is a work-in-progress log representation as an underlying
+	// BST with a state updates being mapped as a DAG. The tree nodes
+	// represent particular keys, each pointing to the first node of the
+	// graph. The main purpose of this approach is to track dependencies
+	// between multiple-key operations (i.e. SWAPS).
 	LogDAG
 )
 
-// Generator ...
+// Generator generates a structure with random elements, considering the config
+// parameters provided. 'n' is the total number of commands; 'wrt' the write
+// percentage of that randomized load profile; and 'dif' the number of different
+// keys to be considered.
 type Generator func(n, wrt, dif int) (Structure, error)
 
-// TranslateGen ...
+// TranslateGen returns a known generator for a particular structure.
 func TranslateGen(id StructID) Generator {
 	switch id {
 	case LogList:
@@ -41,25 +54,26 @@ func TranslateGen(id StructID) Generator {
 	}
 }
 
-// Operation ...
+// Operation indexes the different commands recognized by the kvstore application.
+// Besides reads and writes, the idea is to later support SWAP operations.
 type Operation uint8
 
 const (
-	// Read ...
+	// Read the value of a certain key.
 	Read Operation = iota
 
-	// Write ...
+	// Write a specific value over an informed key.
 	Write
 )
 
-// KVCommand ...
+// KVCommand defines the command format for the simulated key-value application.
 type KVCommand struct {
 	op    Operation
 	key   int
 	value uint32
 }
 
-// ListGen ...
+// ListGen generates a random log following the LogList representation.
 func ListGen(n, wrt, dif int) (Structure, error) {
 
 	srand := rand.NewSource(time.Now().UnixNano())
@@ -85,7 +99,7 @@ func ListGen(n, wrt, dif int) (Structure, error) {
 	return l, nil
 }
 
-// AVLTreeHTGen ...
+// AVLTreeHTGen generates a random log following the LogAVL representation.
 func AVLTreeHTGen(n, wrt, dif int) (Structure, error) {
 
 	srand := rand.NewSource(time.Now().UnixNano())
@@ -114,10 +128,11 @@ func AVLTreeHTGen(n, wrt, dif int) (Structure, error) {
 	return avl, nil
 }
 
-// Constructor ...
+// Constructor constructs a command log by parsing the contents of the file
+// 'fn', returning the specific structure and the number of commands interpreted.
 type Constructor func(fn string) (Structure, int, error)
 
-// TranslateConst ...
+// TranslateConst returns a known constructor for a particular structure.
 func TranslateConst(id StructID) Constructor {
 	switch id {
 	case LogList:
@@ -132,7 +147,7 @@ func TranslateConst(id StructID) Constructor {
 	}
 }
 
-// AVLTreeHTConst ...
+// AVLTreeHTConst constructs a command log following the LogAVL representation.
 func AVLTreeHTConst(fn string) (Structure, int, error) {
 
 	log, err := parseLog(fn)

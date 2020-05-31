@@ -10,7 +10,9 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// TestCase ...
+// TestCase reflects the .TOML input files, configuring experimental evaluation
+// scenarios. If 'LogFile' is provided, the random parameters (NumCmds, PWrites,
+// NDiffKeys) are ignored and the static log is parsed from the provided path.
 type TestCase struct {
 	Name          string
 	Struct        StructID

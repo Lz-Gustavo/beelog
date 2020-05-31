@@ -1,33 +1,38 @@
 package main
 
-import (
-	"errors"
-)
+import "errors"
 
-// Reducer indexes different log compact strategies. For all list-based algorithms,
-// it's assumed that the list is represented on the oposite order.  The first element
-// is the last proposed index in the command log, its neighbor is the prior-indexed
-// command, and so on.
+// Reducer indexes different log compact strategies.
 type Reducer int8
 
 const (
-	// BubblerLt ...
+	// BubblerLt is similar to a bubble sort implementation, in the sense
+	// that command dependencies are identified on each iteration considering
+	// the result of the prior. Does not provided an optimal solution unlike
+	// the others.
 	BubblerLt Reducer = iota
 
-	// GreedyLt ...
+	// GreedyLt is a greedy approach of the first algorithm. On each iteration,
+	// the algorithm continues iterating over the list removing any prior
+	// occurence of writes on that particular key.
 	GreedyLt
 
-	// GreedyAvl ...
+	// GreedyAvl recursively implements a greedy search over LogAVL structures.
+	// On each iteration, the algorithm continues iterating over the key update
+	// list until the request upper bound is surpassed.
 	GreedyAvl
 
-	// IterBFSAvl ...
+	// IterBFSAvl is an iterative version of GreedyAVL, adapted from the iterative
+	// implementation of the BFS algorithm presented in CLRS09.
 	IterBFSAvl
 
-	// IterDFSAvl ...
+	// IterDFSAvl is a small variation of IterBFSAvl, simply replacing FIFO for
+	// LIFO semantics. The stack is implemented as an underlying slice.
 	IterDFSAvl
 )
 
-// ApplyReduceAlgo ...
+// ApplyReduceAlgo executes over a Structure the choosen Reducer algorithm, returning
+// a compacted log of commands within the requested [p, n] interval.
 func ApplyReduceAlgo(s Structure, r Reducer, p, n int) ([]KVCommand, error) {
 
 	var log []KVCommand
@@ -112,7 +117,7 @@ func BubblerList(l *List, p, n int) []KVCommand {
 	return log
 }
 
-// GreedyList returns an optimal solution...
+// GreedyList returns an optimal solution.
 func GreedyList(l *List, p, n int) []KVCommand {
 	var (
 		rc   int
@@ -147,7 +152,7 @@ func GreedyList(l *List, p, n int) []KVCommand {
 	return log
 }
 
-// GreedyAVLTreeHT ...
+// GreedyAVLTreeHT implements a recursive search on top of LogAVL structs.
 func GreedyAVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 	log := []KVCommand{}
 	avl.resetVisitedValues()
@@ -182,7 +187,7 @@ func greedyRecur(avl *AVLTreeHT, k *avlTreeNode, p, n int, log *[]KVCommand) {
 	}
 }
 
-// IterBFSAVLTreeHT ...
+// IterBFSAVLTreeHT is an iterative variantion of an GreedyAVL based on BFS.
 func IterBFSAVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 
 	avl.resetVisitedValues()
@@ -217,7 +222,7 @@ func IterBFSAVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 	return log
 }
 
-// IterDFSAVLTreeHT ...
+// IterDFSAVLTreeHT is an iterative variantion of an GreedyAVL based on DFS.
 func IterDFSAVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 
 	avl.resetVisitedValues()

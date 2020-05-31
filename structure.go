@@ -6,7 +6,8 @@ import (
 	"strings"
 )
 
-// Structure ...
+// Structure is an abstraction for the different log representation structures
+// implemented.
 type Structure interface {
 	Str() string
 	Len() int
@@ -20,11 +21,9 @@ type listNode struct {
 
 // List ...
 type List struct {
-	first *listNode
-	tail  *listNode
-	len   int
-
-	// only used on B1 algorithms ...
+	first   *listNode
+	tail    *listNode
+	len     int
 	visited bool
 }
 
@@ -42,7 +41,8 @@ func (l *List) Len() int {
 	return l.len
 }
 
-// Log ...
+// Log records the occurence of command 'cmd' on the provided index, as a new
+// node on the underlying liked list.
 func (l *List) Log(index int, cmd KVCommand) error {
 	if cmd.op != Write {
 		return nil
@@ -155,7 +155,9 @@ func (av *AVLTreeHT) Len() int {
 	return av.len
 }
 
-// Log ...
+// Log records the occurence of command 'cmd' on the provided index. Writes are
+// mapped into a new node on the AVL tree, with a pointer to the newly inserted
+// state update on the update list for its particular key.
 func (av *AVLTreeHT) Log(index int, cmd KVCommand) error {
 	if cmd.op != Write {
 		return nil
