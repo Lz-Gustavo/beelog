@@ -4,9 +4,13 @@ import (
 	"fmt"
 	"math/rand"
 	"runtime"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
+
+	bl "beelog"
+	"beelog/pb"
 )
 
 func TestListAlgos(t *testing.T) {
@@ -17,35 +21,35 @@ func TestListAlgos(t *testing.T) {
 		nCmds    int
 		pWrts    int
 		diffKeys int
-		alg      Reducer
+		alg      bl.Reducer
 	}{
 		{
 			"Case1",
 			20,
 			100,
 			5,
-			BubblerLt,
+			bl.BubblerLt,
 		},
 		{
 			"Case2",
 			20,
 			100,
 			5,
-			GreedyLt,
+			bl.GreedyLt,
 		},
 		{
 			"Case3",
 			20000000,
 			90,
 			10000,
-			BubblerLt,
+			bl.BubblerLt,
 		},
 		{
 			"Case4",
 			20000,
 			90,
 			10000,
-			GreedyLt,
+			bl.GreedyLt,
 		},
 	}
 
@@ -60,7 +64,7 @@ func TestListAlgos(t *testing.T) {
 			t.Log("Init:\n", l.Str())
 		}
 
-		_, err = ApplyReduceAlgo(l, tc.alg, 0, tc.nCmds-1)
+		_, err = bl.ApplyReduceAlgo(l, tc.alg, 0, uint64(tc.nCmds-1))
 		if err != nil {
 			t.Log("test", tc.name, "failed with err:", err.Error())
 			t.FailNow()
@@ -79,7 +83,7 @@ func TestAVLTreeAlgos(t *testing.T) {
 		numCmds      int
 		writePercent int
 		diffKeys     int
-		p, n         int
+		p, n         uint64
 	}{
 		{
 			20,
@@ -111,7 +115,7 @@ func TestAVLTreeAlgos(t *testing.T) {
 		},
 	}
 
-	log := []KVCommand{}
+	log := []pb.Command{}
 	for _, tc := range testCases {
 		avl, err := AVLTreeHTGen(tc.numCmds, tc.writePercent, tc.diffKeys)
 		if err != nil {
@@ -120,7 +124,7 @@ func TestAVLTreeAlgos(t *testing.T) {
 		}
 		t.Logf("Tree structure:\n %s \n", avl.Str())
 
-		log, err = ApplyReduceAlgo(avl, GreedyAvl, tc.p, tc.n)
+		log, err = bl.ApplyReduceAlgo(avl, bl.GreedyAvl, tc.p, tc.n)
 		if err != nil {
 			t.Log(err.Error())
 			t.FailNow()
@@ -128,7 +132,7 @@ func TestAVLTreeAlgos(t *testing.T) {
 		t.Logf("GreedyAvl log:\n %v \n", log)
 		t.Log("Removed", tc.numCmds-len(log), "comands")
 
-		log, err = ApplyReduceAlgo(avl, IterBFSAvl, tc.p, tc.n)
+		log, err = bl.ApplyReduceAlgo(avl, bl.IterBFSAvl, tc.p, tc.n)
 		if err != nil {
 			t.Log(err.Error())
 			t.FailNow()
@@ -136,7 +140,7 @@ func TestAVLTreeAlgos(t *testing.T) {
 		t.Logf("IterBFSAvl log:\n %v \n", log)
 		t.Log("Removed", tc.numCmds-len(log), "comands")
 
-		log, err = ApplyReduceAlgo(avl, IterDFSAvl, tc.p, tc.n)
+		log, err = bl.ApplyReduceAlgo(avl, bl.IterDFSAvl, tc.p, tc.n)
 		if err != nil {
 			t.Log(err.Error())
 			t.FailNow()
@@ -152,7 +156,7 @@ func BenchmarkAVLTreeAlgos(b *testing.B) {
 		numCmds      int
 		writePercent int
 		diffKeys     int
-		p, n         int
+		p, n         uint64
 	}{
 		{
 			1000,
@@ -191,21 +195,21 @@ func BenchmarkAVLTreeAlgos(b *testing.B) {
 				b.Log(err.Error())
 				b.FailNow()
 			}
-			avl := st.(*AVLTreeHT)
+			avl := st.(*bl.AVLTreeHT)
 
 			b.ResetTimer()
 			b.Run("GreedyAvl", func(b *testing.B) {
-				GreedyAVLTreeHT(avl, sc.p, sc.n)
+				bl.GreedyAVLTreeHT(avl, sc.p, sc.n)
 			})
 
 			b.ResetTimer()
 			b.Run("BFS-IterAvl", func(b *testing.B) {
-				IterBFSAVLTreeHT(avl, sc.p, sc.n)
+				bl.IterBFSAVLTreeHT(avl, sc.p, sc.n)
 			})
 
 			b.ResetTimer()
 			b.Run("DFS-IterAvl", func(b *testing.B) {
-				IterDFSAVLTreeHT(avl, sc.p, sc.n)
+				bl.IterDFSAVLTreeHT(avl, sc.p, sc.n)
 			})
 			b.StopTimer()
 		}
@@ -217,26 +221,26 @@ func BenchmarkAVLTreeAlgos(b *testing.B) {
 func BenchmarkAlgosThroughput(b *testing.B) {
 
 	b.SetParallelism(runtime.NumCPU())
-	numCommands, diffKeys, writePercent := 1000000, 1000, 50
-	log := make(chan KVCommand, numCommands)
+	numCommands, diffKeys, writePercent := uint64(1000000), 1000, 50
+	log := make(chan pb.Command, numCommands)
 
 	// dummy goroutine that creates a random log of commands
 	go createRandomLog(numCommands, diffKeys, writePercent, log)
 
 	// deploy the different workers, each implementing a diff recov protocol
-	chA := make(chan KVCommand, 0)
-	chB := make(chan KVCommand, 0)
-	chC := make(chan KVCommand, 0)
-	chD := make(chan KVCommand, 0)
+	chA := make(chan pb.Command, 0)
+	chB := make(chan pb.Command, 0)
+	chC := make(chan pb.Command, 0)
+	chD := make(chan pb.Command, 0)
 
 	wg := &sync.WaitGroup{}
 	mu := &sync.Mutex{}
 	wg.Add(4)
 
 	go runTraditionalLog(chD, numCommands, mu, wg)
-	go runAlgorithm(GreedyAvl, chA, numCommands, mu, wg)
-	go runAlgorithm(IterBFSAvl, chB, numCommands, mu, wg)
-	go runAlgorithm(IterDFSAvl, chC, numCommands, mu, wg)
+	go runAlgorithm(bl.GreedyAvl, chA, numCommands, mu, wg)
+	go runAlgorithm(bl.IterBFSAvl, chB, numCommands, mu, wg)
+	go runAlgorithm(bl.IterDFSAvl, chC, numCommands, mu, wg)
 
 	// fan-out that output to the different goroutines
 	go splitIntoWorkers(log, chA, chB, chC, chD)
@@ -246,32 +250,32 @@ func BenchmarkAlgosThroughput(b *testing.B) {
 	close(log)
 }
 
-func createRandomLog(n, dif, wrt int, out chan<- KVCommand) {
+func createRandomLog(n uint64, dif, wrt int, out chan<- pb.Command) {
 
 	srand := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(srand)
 
-	for i := 0; i < n; i++ {
-		cmd := KVCommand{
-			key: r.Intn(dif),
+	for i := uint64(0); i < n; i++ {
+		cmd := pb.Command{
+			Key: strconv.Itoa(r.Intn(dif)),
 		}
 
 		// WRITE operation
 		if cn := r.Intn(100); cn < wrt {
-			cmd.value = r.Uint32()
-			cmd.op = Write
+			cmd.Value = strconv.Itoa(r.Int())
+			cmd.Op = pb.Command_SET
 
 		} else {
-			cmd.op = Read
+			cmd.Op = pb.Command_GET
 		}
 		out <- cmd
 	}
 
 	// indicates the last command in the log, forcing consumer goroutines to halt
-	out <- KVCommand{}
+	out <- pb.Command{}
 }
 
-func splitIntoWorkers(src <-chan KVCommand, wrks ...chan<- KVCommand) {
+func splitIntoWorkers(src <-chan pb.Command, wrks ...chan<- pb.Command) {
 	for {
 		select {
 		case cmd, ok := <-src:
@@ -280,7 +284,7 @@ func splitIntoWorkers(src <-chan KVCommand, wrks ...chan<- KVCommand) {
 			}
 			for _, ch := range wrks {
 				// avoid blocking receive on the sync ch
-				go func(dest chan<- KVCommand, c KVCommand) {
+				go func(dest chan<- pb.Command, c pb.Command) {
 					dest <- c
 				}(ch, cmd)
 			}
@@ -288,10 +292,10 @@ func splitIntoWorkers(src <-chan KVCommand, wrks ...chan<- KVCommand) {
 	}
 }
 
-func runAlgorithm(alg Reducer, log <-chan KVCommand, n int, mu *sync.Mutex, wg *sync.WaitGroup) {
+func runAlgorithm(alg bl.Reducer, log <-chan pb.Command, n uint64, mu *sync.Mutex, wg *sync.WaitGroup) {
 
-	avl := NewAVLTreeHT()
-	i := 0
+	avl := bl.NewAVLTreeHT()
+	var i uint64
 	defer wg.Done()
 
 	start := time.Now()
@@ -319,34 +323,34 @@ BREAK:
 
 	var (
 		fn, id string
-		out    []KVCommand
+		out    []pb.Command
 
 		// elapsed time to recovery the entire log
 		recov time.Duration
 	)
 
 	switch alg {
-	case GreedyAvl:
+	case bl.GreedyAvl:
 		start = time.Now()
-		out = GreedyAVLTreeHT(avl, 0, n)
+		out = bl.GreedyAVLTreeHT(avl, 0, n)
 		recov = time.Since(start)
 
 		id = "RecurGreedy Benchmark"
 		fn = "output/recurgreedy-bench.out"
 		break
 
-	case IterBFSAvl:
+	case bl.IterBFSAvl:
 		start = time.Now()
-		out = IterBFSAVLTreeHT(avl, 0, n)
+		out = bl.IterBFSAVLTreeHT(avl, 0, n)
 		recov = time.Since(start)
 
 		id = "IterBFS Benchmark"
 		fn = "output/iterbfs-bench.out"
 		break
 
-	case IterDFSAvl:
+	case bl.IterDFSAvl:
 		start = time.Now()
-		out = IterDFSAVLTreeHT(avl, 0, n)
+		out = bl.IterDFSAVLTreeHT(avl, 0, n)
 		recov = time.Since(start)
 
 		id = "IterDFS Benchmark"
@@ -369,7 +373,7 @@ BREAK:
 	fmt.Println(
 		"\n====================",
 		"\n===", id,
-		"\nRemoved cmds: ", n-len(out),
+		"\nRemoved cmds: ", n-uint64(len(out)),
 		"\nConstruction Time: ", construct,
 		"\nCompactation Time: ", recov,
 		"\nInstallation Time:", dump,
@@ -378,10 +382,10 @@ BREAK:
 	mu.Unlock()
 }
 
-func runTraditionalLog(log <-chan KVCommand, n int, mu *sync.Mutex, wg *sync.WaitGroup) {
+func runTraditionalLog(log <-chan pb.Command, n uint64, mu *sync.Mutex, wg *sync.WaitGroup) {
 
-	logfile := make([]KVCommand, 0, n)
-	i := 0
+	logfile := make([]pb.Command, 0, n)
+	var i uint64
 	defer wg.Done()
 
 	start := time.Now()
@@ -418,7 +422,7 @@ BREAK:
 	fmt.Println(
 		"\n====================",
 		"\n=== Traditional Log Benchmark",
-		"\nRemoved cmds:", n-len(logfile),
+		"\nRemoved cmds:", n-uint64(len(logfile)),
 		"\nConstruction Time:", construct,
 		"\nCompactation Time: -",
 		"\nInstallation Time:", dump,

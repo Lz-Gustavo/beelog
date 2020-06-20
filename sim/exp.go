@@ -7,6 +7,9 @@ import (
 	"strconv"
 	"time"
 
+	bl "beelog"
+	"beelog/pb"
+
 	"github.com/BurntSushi/toml"
 )
 
@@ -20,7 +23,7 @@ type TestCase struct {
 	PercentWrites int
 	NumDiffKeys   int
 	Iterations    int
-	Algo          []Reducer
+	Algo          []bl.Reducer
 	LogFilename   string
 }
 
@@ -54,7 +57,7 @@ func validateTestCase(tc *TestCase) error {
 
 func (tc *TestCase) run() error {
 	var (
-		st  Structure
+		st  bl.Structure
 		err error
 		ln  int
 	)
@@ -79,7 +82,7 @@ func (tc *TestCase) run() error {
 
 		for _, a := range tc.Algo {
 			start := time.Now()
-			log, err := ApplyReduceAlgo(st, a, 0, tc.NumCmds-1)
+			log, err := bl.ApplyReduceAlgo(st, a, 0, uint64(tc.NumCmds-1))
 			if err != nil {
 				return err
 			}
@@ -93,7 +96,7 @@ func (tc *TestCase) run() error {
 	return nil
 }
 
-func (tc *TestCase) output(ind int, alg Reducer, dur time.Duration, log []KVCommand) error {
+func (tc *TestCase) output(ind int, alg bl.Reducer, dur time.Duration, log []pb.Command) error {
 	fmt.Println(
 		"\n====================",
 		"\n====", tc.Name,
@@ -114,7 +117,7 @@ func (tc *TestCase) output(ind int, alg Reducer, dur time.Duration, log []KVComm
 	return nil
 }
 
-func dumpLogIntoFile(folder, name string, log []KVCommand) error {
+func dumpLogIntoFile(folder, name string, log []pb.Command) error {
 	if _, exists := os.Stat(folder); os.IsNotExist(exists) {
 		os.Mkdir(folder, 0744)
 	}
@@ -126,7 +129,7 @@ func dumpLogIntoFile(folder, name string, log []KVCommand) error {
 	defer out.Close()
 
 	for _, cmd := range log {
-		_, err = fmt.Fprintf(out, "%d %d %v\n", cmd.op, cmd.key, cmd.value)
+		_, err = fmt.Fprintf(out, "%d %s %v\n", cmd.Op, cmd.Key, cmd.Value)
 		if err != nil {
 			return err
 		}

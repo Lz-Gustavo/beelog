@@ -1,9 +1,11 @@
-package main
+package beelog
 
 import (
+	"beelog/pb"
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 )
 
 // Structure is an abstraction for the different log representation structures
@@ -11,7 +13,7 @@ import (
 type Structure interface {
 	Str() string
 	Len() int
-	Log(index int, cmd KVCommand) error
+	Log(index uint64, cmd pb.Command) error
 }
 
 type listNode struct {
@@ -43,8 +45,8 @@ func (l *List) Len() int {
 
 // Log records the occurence of command 'cmd' on the provided index, as a new
 // node on the underlying liked list.
-func (l *List) Log(index int, cmd KVCommand) error {
-	if cmd.op != Write {
+func (l *List) Log(index uint64, cmd pb.Command) error {
+	if cmd.Op != pb.Command_SET {
 		return nil
 	}
 	st := State{
@@ -96,16 +98,16 @@ func (l *List) pop() *listNode {
 // State represents a new state, a command execution happening on a certain
 // consensus index, analogous to a logical clock event.
 type State struct {
-	ind int
-	cmd KVCommand
+	ind uint64
+	cmd pb.Command
 }
 
 // stateTable stores state updates for particular keys.
-type stateTable map[int]*List
+type stateTable map[string]*List
 
 type avlTreeNode struct {
-	ind int
-	key int
+	ind uint64
+	key string
 	ptr *listNode
 
 	left   *avlTreeNode
@@ -118,6 +120,7 @@ type AVLTreeHT struct {
 	root *avlTreeNode
 	aux  *stateTable
 	len  int
+	mu   sync.RWMutex
 }
 
 // NewAVLTreeHT ...
@@ -132,6 +135,12 @@ func NewAVLTreeHT() *AVLTreeHT {
 // Str implements a BFS on the AVLTree, returning a string representation for the
 // entire struct.
 func (av *AVLTreeHT) Str() string {
+	if av.Len() < 1 {
+		return ""
+	}
+	av.mu.RLock()
+	defer av.mu.RUnlock()
+
 	nodes := []string{fmt.Sprintf("(%v|%v)", av.root.ind, av.root.key)}
 	queue := &List{}
 	queue.push(av.root)
@@ -158,14 +167,16 @@ func (av *AVLTreeHT) Len() int {
 // Log records the occurence of command 'cmd' on the provided index. Writes are
 // mapped into a new node on the AVL tree, with a pointer to the newly inserted
 // state update on the update list for its particular key.
-func (av *AVLTreeHT) Log(index int, cmd KVCommand) error {
-	if cmd.op != Write {
+func (av *AVLTreeHT) Log(index uint64, cmd pb.Command) error {
+	if cmd.Op != pb.Command_SET {
 		return nil
 	}
+	av.mu.Lock()
+	defer av.mu.Unlock()
 
 	aNode := &avlTreeNode{
 		ind: index,
-		key: cmd.key,
+		key: cmd.Key,
 	}
 
 	// a write cmd always references a new state on the aux hash table
@@ -174,13 +185,13 @@ func (av *AVLTreeHT) Log(index int, cmd KVCommand) error {
 		cmd: cmd,
 	}
 
-	_, exists := (*av.aux)[cmd.key]
+	_, exists := (*av.aux)[cmd.Key]
 	if !exists {
-		(*av.aux)[cmd.key] = &List{}
+		(*av.aux)[cmd.Key] = &List{}
 	}
 
 	// add state to the list of updates in that particular key
-	lNode := (*av.aux)[cmd.key].push(st)
+	lNode := (*av.aux)[cmd.Key].push(st)
 	aNode.ptr = lNode
 
 	ok := av.insert(aNode)

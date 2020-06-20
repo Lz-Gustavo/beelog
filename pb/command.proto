@@ -1,0 +1,18 @@
+syntax = "proto3";
+package pb;
+
+message Command {
+	uint64 Id = 1;
+	string Ip = 2;
+
+	enum Operation {
+		GET = 0;
+		SET = 1;
+		DELETE = 2;
+	}
+	Operation Op = 3;
+
+	string Key = 4;
+	string Value = 5;
+	//google.protobuf.Timestamp Ts = 6;
+}

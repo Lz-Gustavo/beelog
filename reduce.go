@@ -1,6 +1,9 @@
-package main
+package beelog
 
-import "errors"
+import (
+	"beelog/pb"
+	"errors"
+)
 
 // Reducer indexes different log compact strategies.
 type Reducer int8
@@ -33,25 +36,13 @@ const (
 
 // ApplyReduceAlgo executes over a Structure the choosen Reducer algorithm, returning
 // a compacted log of commands within the requested [p, n] interval.
-func ApplyReduceAlgo(s Structure, r Reducer, p, n int) ([]KVCommand, error) {
+func ApplyReduceAlgo(s Structure, r Reducer, p, n uint64) ([]pb.Command, error) {
+	if s.Len() < 1 {
+		return nil, errors.New("empty structure")
+	}
 
-	var log []KVCommand
+	var log []pb.Command
 	switch st := s.(type) {
-	case *List:
-		switch r {
-		case BubblerLt:
-			log = BubblerList(st, p, n)
-			break
-
-		case GreedyLt:
-			log = GreedyList(st, p, n)
-			break
-
-		default:
-			return nil, errors.New("unsupported reduce algorithm")
-		}
-		break
-
 	case *AVLTreeHT:
 		switch r {
 		case GreedyAvl:
@@ -71,6 +62,21 @@ func ApplyReduceAlgo(s Structure, r Reducer, p, n int) ([]KVCommand, error) {
 		}
 		break
 
+	case *List:
+		switch r {
+		case BubblerLt:
+			log = BubblerList(st, p, n)
+			break
+
+		case GreedyLt:
+			log = GreedyList(st, p, n)
+			break
+
+		default:
+			return nil, errors.New("unsupported reduce algorithm")
+		}
+		break
+
 	default:
 		return nil, errors.New("unsupported log datastructure")
 	}
@@ -78,13 +84,13 @@ func ApplyReduceAlgo(s Structure, r Reducer, p, n int) ([]KVCommand, error) {
 }
 
 // BubblerList is the simpliest algorithm.
-func BubblerList(l *List, p, n int) []KVCommand {
+func BubblerList(l *List, p, n uint64) []pb.Command {
 	var (
 		rm bool
 		rc int
 		i  *listNode
 	)
-	log := make([]KVCommand, 0)
+	log := make([]pb.Command, 0)
 
 	for {
 		rm = false
@@ -94,7 +100,7 @@ func BubblerList(l *List, p, n int) []KVCommand {
 			neigh := i.next.val.(State).cmd
 
 			// Subsequent write operations over the same key
-			if cmd.key == neigh.key {
+			if cmd.Key == neigh.Key {
 				i.next = i.next.next
 				rm = true
 				rc++
@@ -118,12 +124,12 @@ func BubblerList(l *List, p, n int) []KVCommand {
 }
 
 // GreedyList returns an optimal solution.
-func GreedyList(l *List, p, n int) []KVCommand {
+func GreedyList(l *List, p, n uint64) []pb.Command {
 	var (
 		rc   int
 		i, j *listNode
 	)
-	log := make([]KVCommand, 0)
+	log := make([]pb.Command, 0)
 
 	// iterator i can reach nil value on the last j iteration
 	for i = l.first; i != nil && i.next != nil; i = i.next {
@@ -135,7 +141,7 @@ func GreedyList(l *List, p, n int) []KVCommand {
 			neigh := j.val.(State)
 
 			// subsequent write operations over the same key
-			if st.cmd.key == neigh.cmd.key {
+			if st.cmd.Key == neigh.cmd.Key {
 				priorNeigh.next = j.next
 				rc++
 
@@ -153,14 +159,17 @@ func GreedyList(l *List, p, n int) []KVCommand {
 }
 
 // GreedyAVLTreeHT implements a recursive search on top of LogAVL structs.
-func GreedyAVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
-	log := []KVCommand{}
+func GreedyAVLTreeHT(avl *AVLTreeHT, p, n uint64) []pb.Command {
+	log := []pb.Command{}
+	avl.mu.RLock()
+	defer avl.mu.RUnlock()
+
 	avl.resetVisitedValues()
 	greedyRecur(avl, avl.root, p, n, &log)
 	return log
 }
 
-func greedyRecur(avl *AVLTreeHT, k *avlTreeNode, p, n int, log *[]KVCommand) {
+func greedyRecur(avl *AVLTreeHT, k *avlTreeNode, p, n uint64, log *[]pb.Command) {
 
 	// nil or key already satisfied in the log
 	if k == nil {
@@ -170,7 +179,7 @@ func greedyRecur(avl *AVLTreeHT, k *avlTreeNode, p, n int, log *[]KVCommand) {
 	// index in [p, n] interval and key not already satisfied on the log
 	if !(*avl.aux)[k.key].visited && k.ind >= p && k.ind <= n {
 
-		var phi KVCommand
+		var phi pb.Command
 		for j := k.ptr; j != nil && j.val.(*State).ind <= n; j = j.next {
 			phi = j.val.(*State).cmd
 		}
@@ -188,10 +197,12 @@ func greedyRecur(avl *AVLTreeHT, k *avlTreeNode, p, n int, log *[]KVCommand) {
 }
 
 // IterBFSAVLTreeHT is an iterative variantion of an GreedyAVL based on BFS.
-func IterBFSAVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
+func IterBFSAVLTreeHT(avl *AVLTreeHT, p, n uint64) []pb.Command {
+	log := []pb.Command{}
+	avl.mu.RLock()
+	defer avl.mu.RUnlock()
 
 	avl.resetVisitedValues()
-	log := []KVCommand{}
 	queue := []*avlTreeNode{avl.root}
 	var u *avlTreeNode
 
@@ -202,7 +213,7 @@ func IterBFSAVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 		// index in [p, n] interval and key not already satisfied on the log
 		if !(*avl.aux)[u.key].visited && u.ind >= p && u.ind <= n {
 
-			var phi KVCommand
+			var phi pb.Command
 			for j := u.ptr; j != nil && j.val.(*State).ind <= n; j = j.next {
 				phi = j.val.(*State).cmd
 			}
@@ -223,10 +234,12 @@ func IterBFSAVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 }
 
 // IterDFSAVLTreeHT is an iterative variantion of an GreedyAVL based on DFS.
-func IterDFSAVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
+func IterDFSAVLTreeHT(avl *AVLTreeHT, p, n uint64) []pb.Command {
+	log := []pb.Command{}
+	avl.mu.RLock()
+	defer avl.mu.RUnlock()
 
 	avl.resetVisitedValues()
-	log := []KVCommand{}
 	queue := []*avlTreeNode{avl.root}
 	var u *avlTreeNode
 
@@ -237,7 +250,7 @@ func IterDFSAVLTreeHT(avl *AVLTreeHT, p, n int) []KVCommand {
 		// index in [p, n] interval and key not already satisfied on the log
 		if !(*avl.aux)[u.key].visited && u.ind >= p && u.ind <= n {
 
-			var phi KVCommand
+			var phi pb.Command
 			for j := u.ptr; j != nil && j.val.(*State).ind <= n; j = j.next {
 				phi = j.val.(*State).cmd
 			}

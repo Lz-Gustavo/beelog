@@ -8,6 +8,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	bl "beelog"
+	"beelog/pb"
 )
 
 // StructID indexes different structs available for log representation.
@@ -38,7 +41,7 @@ const (
 // parameters provided. 'n' is the total number of commands; 'wrt' the write
 // percentage of that randomized load profile; and 'dif' the number of different
 // keys to be considered.
-type Generator func(n, wrt, dif int) (Structure, error)
+type Generator func(n, wrt, dif int) (bl.Structure, error)
 
 // TranslateGen returns a known generator for a particular structure.
 func TranslateGen(id StructID) Generator {
@@ -54,43 +57,24 @@ func TranslateGen(id StructID) Generator {
 	}
 }
 
-// Operation indexes the different commands recognized by the kvstore application.
-// Besides reads and writes, the idea is to later support SWAP operations.
-type Operation uint8
-
-const (
-	// Read the value of a certain key.
-	Read Operation = iota
-
-	// Write a specific value over an informed key.
-	Write
-)
-
-// KVCommand defines the command format for the simulated key-value application.
-type KVCommand struct {
-	op    Operation
-	key   int
-	value uint32
-}
-
 // ListGen generates a random log following the LogList representation.
-func ListGen(n, wrt, dif int) (Structure, error) {
+func ListGen(n, wrt, dif int) (bl.Structure, error) {
 
 	srand := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(srand)
-	l := &List{len: n}
+	l := &bl.List{}
 
 	for i := 0; i < n; i++ {
 
 		if cn := r.Intn(100); cn < wrt {
-			cmd := KVCommand{
-				key:   r.Intn(dif),
-				value: r.Uint32(),
-				op:    Write,
+			cmd := pb.Command{
+				Key:   strconv.Itoa(r.Intn(dif)),
+				Value: strconv.Itoa(r.Int()),
+				Op:    pb.Command_SET,
 			}
 
 			// the list is represented on the oposite order
-			l.Log(n-1-i, cmd)
+			l.Log(uint64(n-1-i), cmd)
 
 		} else {
 			continue
@@ -100,23 +84,23 @@ func ListGen(n, wrt, dif int) (Structure, error) {
 }
 
 // AVLTreeHTGen generates a random log following the LogAVL representation.
-func AVLTreeHTGen(n, wrt, dif int) (Structure, error) {
+func AVLTreeHTGen(n, wrt, dif int) (bl.Structure, error) {
 
 	srand := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(srand)
-	avl := NewAVLTreeHT()
+	avl := bl.NewAVLTreeHT()
 
 	for i := 0; i < n; i++ {
 
 		// only WRITE operations are recorded on the tree
 		if cn := r.Intn(100); cn < wrt {
-			cmd := KVCommand{
-				key:   r.Intn(dif),
-				value: r.Uint32(),
-				op:    Write,
+			cmd := pb.Command{
+				Key:   strconv.Itoa(r.Intn(dif)),
+				Value: strconv.Itoa(r.Int()),
+				Op:    pb.Command_SET,
 			}
 
-			err := avl.Log(i, cmd)
+			err := avl.Log(uint64(i), cmd)
 			if err != nil {
 				return nil, err
 			}
@@ -130,7 +114,7 @@ func AVLTreeHTGen(n, wrt, dif int) (Structure, error) {
 
 // Constructor constructs a command log by parsing the contents of the file
 // 'fn', returning the specific structure and the number of commands interpreted.
-type Constructor func(fn string) (Structure, int, error)
+type Constructor func(fn string) (bl.Structure, int, error)
 
 // TranslateConst returns a known constructor for a particular structure.
 func TranslateConst(id StructID) Constructor {
@@ -148,7 +132,7 @@ func TranslateConst(id StructID) Constructor {
 }
 
 // AVLTreeHTConst constructs a command log following the LogAVL representation.
-func AVLTreeHTConst(fn string) (Structure, int, error) {
+func AVLTreeHTConst(fn string) (bl.Structure, int, error) {
 
 	log, err := parseLog(fn)
 	if err != nil {
@@ -159,11 +143,11 @@ func AVLTreeHTConst(fn string) (Structure, int, error) {
 	if ln == 0 {
 		return nil, 0, errors.New("empty logfile informed")
 	}
-	avl := NewAVLTreeHT()
+	avl := bl.NewAVLTreeHT()
 
 	for i, cmd := range log {
 
-		err := avl.Log(i, cmd)
+		err := avl.Log(uint64(i), cmd)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -172,15 +156,15 @@ func AVLTreeHTConst(fn string) (Structure, int, error) {
 }
 
 // parseLog interprets the custom defined log format, equivalent to the string
-// representation of the KVCommand struct.
-func parseLog(fn string) ([]KVCommand, error) {
+// representation of the pb.Command struct.
+func parseLog(fn string) ([]pb.Command, error) {
 	fd, err := os.Open(fn)
 	if err != nil {
 		return nil, err
 	}
 	defer fd.Close()
 
-	log := make([]KVCommand, 0)
+	log := make([]pb.Command, 0)
 	sc := bufio.NewScanner(fd)
 
 	for sc.Scan() {
@@ -188,13 +172,13 @@ func parseLog(fn string) ([]KVCommand, error) {
 		fields := strings.Split(line, " ")
 
 		op, _ := strconv.Atoi(fields[0])
-		key, _ := strconv.Atoi(fields[1])
-		value, _ := strconv.ParseInt(fields[2], 10, 32)
+		key := fields[1]
+		value := fields[2]
 
-		cmd := KVCommand{
-			op:    Operation(op),
-			key:   key,
-			value: uint32(value),
+		cmd := pb.Command{
+			Op:    pb.Command_Operation(op),
+			Key:   key,
+			Value: value,
 		}
 		log = append(log, cmd)
 	}
