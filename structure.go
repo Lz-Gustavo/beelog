@@ -15,6 +15,7 @@ type Structure interface {
 	Str() string
 	Len() int
 	Log(index uint64, cmd pb.Command) error
+	Recov(p, n uint64) ([]pb.Command, error)
 }
 
 type listNode struct {
@@ -57,6 +58,11 @@ func (l *List) Log(index uint64, cmd pb.Command) error {
 
 	l.push(st)
 	return nil
+}
+
+// Recov ...
+func (l *List) Recov(p, n uint64) ([]pb.Command, error) {
+	return nil, nil
 }
 
 // push inserts a new node with the argument value on the list, returning a
@@ -122,14 +128,29 @@ type AVLTreeHT struct {
 	aux  *stateTable
 	len  int
 	mu   sync.RWMutex
+
+	config      *LogConfig
+	first, last uint64
+	recentLog   *[]pb.Command // used only on Immediately inmem config
 }
 
 // NewAVLTreeHT ...
 func NewAVLTreeHT() *AVLTreeHT {
 	ht := make(stateTable, 0)
 	return &AVLTreeHT{
-		aux: &ht,
-		len: 0,
+		aux:    &ht,
+		len:    0,
+		config: DefaultLogConfig(),
+	}
+}
+
+// NewAVLTreeHTWithConfig ...
+func NewAVLTreeHTWithConfig(cfg *LogConfig) *AVLTreeHT {
+	ht := make(stateTable, 0)
+	return &AVLTreeHT{
+		aux:    &ht,
+		len:    0,
+		config: cfg,
 	}
 }
 
@@ -169,11 +190,14 @@ func (av *AVLTreeHT) Len() int {
 // mapped into a new node on the AVL tree, with a pointer to the newly inserted
 // state update on the update list for its particular key.
 func (av *AVLTreeHT) Log(index uint64, cmd pb.Command) error {
-	if cmd.Op != pb.Command_SET {
-		return nil
-	}
 	av.mu.Lock()
 	defer av.mu.Unlock()
+
+	if cmd.Op != pb.Command_SET {
+		// TODO: treat 'av.first' attribution on GETs
+		av.last = index
+		return nil
+	}
 
 	aNode := &avlTreeNode{
 		ind: index,
@@ -199,6 +223,58 @@ func (av *AVLTreeHT) Log(index uint64, cmd pb.Command) error {
 	if !ok {
 		return errors.New("cannot insert equal keys on BSTs")
 	}
+
+	// adjust last index once inserted
+	av.last = index
+
+	if av.config.tick == Immediately {
+		return av.ReduceLog()
+	}
+	return nil
+}
+
+// Recov ...
+func (av *AVLTreeHT) Recov(p, n uint64) ([]pb.Command, error) {
+	// postponed log reduce now being executed ...
+	if av.config.tick == Delayed {
+		err := av.ReduceLog()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if av.config.inmem {
+		cmds := make([]pb.Command, 0, p-n)
+
+		// TODO: Later improve retrieve algorithm, exploiting the pre-ordering of
+		// commands based on c.Id. The idea is to simply identify the first and last
+		// underlying indexes and return a subslice copy.
+		for _, c := range *av.recentLog {
+			if c.Id >= p && c.Id <= n {
+				cmds = append(cmds, c)
+			}
+		}
+		return cmds, nil
+	}
+
+	// TODO: recover from the most recent state at av.config.fname
+	return nil, nil
+}
+
+// ReduceLog ...
+func (av *AVLTreeHT) ReduceLog() error {
+	cmds, err := ApplyReduceAlgo(av, av.config.alg, av.first, av.last)
+	if err != nil {
+		return err
+	}
+
+	if av.config.inmem {
+		// update the most recent inmem log state
+		av.recentLog = &cmds
+		return nil
+	}
+
+	// TODO: update the current state at av.config.fname
 	return nil
 }
 
@@ -209,6 +285,7 @@ func (av *AVLTreeHT) insert(node *avlTreeNode) bool {
 	if av.root == nil {
 		av.root = node
 		av.len++
+		av.first = node.ind
 		return true
 	}
 
