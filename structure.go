@@ -1,11 +1,12 @@
 package beelog
 
 import (
-	"beelog/pb"
 	"errors"
 	"fmt"
 	"strings"
 	"sync"
+
+	"github.com/Lz-Gustavo/beelog/pb"
 )
 
 // Structure is an abstraction for the different log representation structures

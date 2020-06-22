@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	bl "beelog"
-	"beelog/pb"
+	bl "github.com/Lz-Gustavo/beelog"
+	"github.com/Lz-Gustavo/beelog/pb"
 )
 
 // StructID indexes different structs available for log representation.

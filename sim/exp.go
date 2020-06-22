@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	bl "beelog"
-	"beelog/pb"
+	bl "github.com/Lz-Gustavo/beelog"
+	"github.com/Lz-Gustavo/beelog/pb"
 
 	"github.com/BurntSushi/toml"
 )

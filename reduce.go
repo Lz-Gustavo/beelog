@@ -1,8 +1,9 @@
 package beelog
 
 import (
-	"beelog/pb"
 	"errors"
+
+	"github.com/Lz-Gustavo/beelog/pb"
 )
 
 // Reducer indexes different log compact strategies.

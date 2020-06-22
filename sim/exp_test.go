@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	bl "beelog"
-	"beelog/pb"
+	bl "github.com/Lz-Gustavo/beelog"
+	"github.com/Lz-Gustavo/beelog/pb"
 )
 
 func TestListAlgos(t *testing.T) {
