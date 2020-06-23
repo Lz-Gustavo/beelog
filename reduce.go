@@ -37,6 +37,8 @@ const (
 
 // ApplyReduceAlgo executes over a Structure the choosen Reducer algorithm, returning
 // a compacted log of commands within the requested [p, n] interval.
+//
+//  IMPORTANT: Unsafe operation. Use Recov() calls for a safe log retrieval.
 func ApplyReduceAlgo(s Structure, r Reducer, p, n uint64) ([]pb.Command, error) {
 	if s.Len() < 1 {
 		return nil, errors.New("empty structure")
@@ -162,16 +164,12 @@ func GreedyList(l *List, p, n uint64) []pb.Command {
 // GreedyAVLTreeHT implements a recursive search on top of LogAVL structs.
 func GreedyAVLTreeHT(avl *AVLTreeHT, p, n uint64) []pb.Command {
 	log := []pb.Command{}
-	avl.mu.RLock()
-	defer avl.mu.RUnlock()
-
 	avl.resetVisitedValues()
 	greedyRecur(avl, avl.root, p, n, &log)
 	return log
 }
 
 func greedyRecur(avl *AVLTreeHT, k *avlTreeNode, p, n uint64, log *[]pb.Command) {
-
 	// nil or key already satisfied in the log
 	if k == nil {
 		return
@@ -200,9 +198,6 @@ func greedyRecur(avl *AVLTreeHT, k *avlTreeNode, p, n uint64, log *[]pb.Command)
 // IterBFSAVLTreeHT is an iterative variantion of an GreedyAVL based on BFS.
 func IterBFSAVLTreeHT(avl *AVLTreeHT, p, n uint64) []pb.Command {
 	log := []pb.Command{}
-	avl.mu.RLock()
-	defer avl.mu.RUnlock()
-
 	avl.resetVisitedValues()
 	queue := []*avlTreeNode{avl.root}
 	var u *avlTreeNode
@@ -237,9 +232,6 @@ func IterBFSAVLTreeHT(avl *AVLTreeHT, p, n uint64) []pb.Command {
 // IterDFSAVLTreeHT is an iterative variantion of an GreedyAVL based on DFS.
 func IterDFSAVLTreeHT(avl *AVLTreeHT, p, n uint64) []pb.Command {
 	log := []pb.Command{}
-	avl.mu.RLock()
-	defer avl.mu.RUnlock()
-
 	avl.resetVisitedValues()
 	queue := []*avlTreeNode{avl.root}
 	var u *avlTreeNode

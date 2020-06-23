@@ -2,6 +2,7 @@ package beelog
 
 import (
 	"math/rand"
+	"reflect"
 	"strconv"
 	"testing"
 	"time"
@@ -56,74 +57,74 @@ func TestAVLTreeLog(t *testing.T) {
 }
 
 func TestAVLTreeDifferentRecoveries(t *testing.T) {
-	testCases := []struct {
-		numCmds      uint64
-		writePercent int
-		diffKeys     int
-		p, n         uint64
-		config       LogConfig
-	}{
+	nCmds, wrt, dif := uint64(2000), 50, 100
+	p, n := uint64(0), uint64(2000)
+	defAlg := IterDFSAvl
+
+	testCases := []LogConfig{
 		{ // immediately inmem
-			2000,
-			50,
-			100,
-			0,
-			2000,
-			LogConfig{
-				alg:   IterDFSAvl,
-				tick:  Immediately,
-				inmem: true,
-			},
+			alg:   defAlg,
+			tick:  Immediately,
+			inmem: true,
 		},
 		{ // delayed inmem
-			2000,
-			50,
-			100,
-			0,
-			2000,
-			LogConfig{
-				alg:   IterDFSAvl,
-				tick:  Delayed,
-				inmem: true,
-			},
+			alg:   defAlg,
+			tick:  Delayed,
+			inmem: true,
 		},
 		{ // immediately disk
-			2000,
-			50,
-			100,
-			0,
-			2000,
-			LogConfig{
-				alg:   IterDFSAvl,
-				tick:  Immediately,
-				inmem: false,
-				fname: "./logstate.out",
-			},
+			alg:   defAlg,
+			tick:  Immediately,
+			inmem: false,
+			fname: "./logstate.out",
 		},
-		{ // dealayed disk
-			2000,
-			50,
-			100,
-			0,
-			2000,
-			LogConfig{
-				alg:   IterDFSAvl,
-				tick:  Delayed,
-				inmem: false,
-				fname: "./logstate.out",
-			},
+		{ // delayed disk
+			alg:   defAlg,
+			tick:  Delayed,
+			inmem: false,
+			fname: "./logstate.out",
 		},
 	}
 
-	for _, tc := range testCases {
-		_, err := generateRandAVLTreeHT(tc.numCmds, tc.writePercent, tc.diffKeys, &tc.config)
+	for i, tc := range testCases {
+		t.Log("====Executing Test Case #", i)
+
+		// Currently logs must be re-generated for each different config, which
+		// prohibits the generation of an unique log file for all configs. An
+		// unique log is not needed on a unit test scenario, since the idea is
+		// not to compare these strategies, only tests its correctness.
+		avl, err := generateRandAVLTreeHT(nCmds, wrt, dif, &tc)
 		if err != nil {
 			t.Log(err.Error())
 			t.FailNow()
 		}
 
-		// TODO: Complete test cases
+		// the compacted log used for later comparison
+		redLog, err := ApplyReduceAlgo(avl, defAlg, p, n)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		log, err := avl.Recov(p, n)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		if !reflect.DeepEqual(redLog, log) {
+			t.Log("Slices not deeply equal")
+			t.FailNow()
+		}
 	}
+}
+
+func TestAVLTreeRecovBytesInterpretation(t *testing.T) {
+	// TODO: ...
+}
+
+func TestAVLTreeDiskLogRetrieval(t *testing.T) {
+	// TODO: ...
 }
 
 func generateRandList(n uint64, wrt, dif int) (*List, error) {
@@ -157,7 +158,7 @@ func generateRandAVLTreeHT(n uint64, wrt, dif int, cfg *LogConfig) (*AVLTreeHT, 
 	var err error
 
 	if cfg == nil {
-		avl = NewAVLTreeHT()
+		avl = NewAVLTreeHT() // uses DefaultLogConfig underneath
 	} else {
 		avl, err = NewAVLTreeHTWithConfig(cfg)
 		if err != nil {

@@ -254,6 +254,10 @@ func (av *AVLTreeHT) Log(index uint64, cmd pb.Command) error {
 // Recov ... mention that when 'inmem' is true the persistent way is ineficient,
 // considering use RecovBytes instead ...
 func (av *AVLTreeHT) Recov(p, n uint64) ([]pb.Command, error) {
+	if n < p {
+		return nil, errors.New("invalid interval request, 'n' must be >= 'p'")
+	}
+
 	av.mu.RLock()
 	defer av.mu.RUnlock()
 
@@ -315,6 +319,10 @@ func (av *AVLTreeHT) Recov(p, n uint64) ([]pb.Command, error) {
 // RecovBytes ... returns an already serialized data, most efficient approach
 // when 'av.config.inmem == false' ... Describe the slicing protocol for pbuffs
 func (av *AVLTreeHT) RecovBytes(p, n uint64) ([]byte, error) {
+	if n < p {
+		return nil, errors.New("invalid interval request, 'n' must be >= 'p'")
+	}
+
 	av.mu.RLock()
 	defer av.mu.RUnlock()
 
@@ -390,7 +398,7 @@ func (av *AVLTreeHT) ReduceLog() error {
 	}
 
 	// update the current state at av.config.fname
-	fd, err := os.OpenFile(av.config.fname, os.O_TRUNC|os.O_WRONLY, 0644)
+	fd, err := os.OpenFile(av.config.fname, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
@@ -564,7 +572,7 @@ func stringRecurBFS(queue []*avlTreeNode, res []string) []string {
 // retainLogInterval receives an entire log and returns the corresponding log
 // matching [p, n] indexes.
 func retainLogInterval(log *[]pb.Command, p, n uint64) []pb.Command {
-	cmds := make([]pb.Command, 0, p-n)
+	cmds := make([]pb.Command, 0, n-p)
 
 	// TODO: Later improve retrieve algorithm, exploiting the pre-ordering of
 	// commands based on c.Id. The idea is to simply identify the first and last
