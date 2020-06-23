@@ -1,12 +1,19 @@
 package beelog
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
+	"os"
 	"strings"
 	"sync"
 
 	"github.com/Lz-Gustavo/beelog/pb"
+
+	"github.com/golang/protobuf/proto"
 )
 
 // Structure is an abstraction for the different log representation structures
@@ -16,6 +23,7 @@ type Structure interface {
 	Len() int
 	Log(index uint64, cmd pb.Command) error
 	Recov(p, n uint64) ([]pb.Command, error)
+	RecovBytes(p, n uint64) ([]byte, error)
 }
 
 type listNode struct {
@@ -62,6 +70,11 @@ func (l *List) Log(index uint64, cmd pb.Command) error {
 
 // Recov ...
 func (l *List) Recov(p, n uint64) ([]pb.Command, error) {
+	return nil, nil
+}
+
+// RecovBytes ...
+func (l *List) RecovBytes(p, n uint64) ([]byte, error) {
 	return nil, nil
 }
 
@@ -233,8 +246,12 @@ func (av *AVLTreeHT) Log(index uint64, cmd pb.Command) error {
 	return nil
 }
 
-// Recov ...
+// Recov ... mention that when 'inmem' is true the persistent way is ineficient,
+// considering use RecovBytes instead ...
 func (av *AVLTreeHT) Recov(p, n uint64) ([]pb.Command, error) {
+	av.mu.RLock()
+	defer av.mu.RUnlock()
+
 	// postponed log reduce now being executed ...
 	if av.config.tick == Delayed {
 		err := av.ReduceLog()
@@ -244,24 +261,117 @@ func (av *AVLTreeHT) Recov(p, n uint64) ([]pb.Command, error) {
 	}
 
 	if av.config.inmem {
-		cmds := make([]pb.Command, 0, p-n)
-
-		// TODO: Later improve retrieve algorithm, exploiting the pre-ordering of
-		// commands based on c.Id. The idea is to simply identify the first and last
-		// underlying indexes and return a subslice copy.
-		for _, c := range *av.recentLog {
-			if c.Id >= p && c.Id <= n {
-				cmds = append(cmds, c)
-			}
-		}
-		return cmds, nil
+		return retainLogInterval(av.recentLog, p, n), nil
 	}
 
-	// TODO: recover from the most recent state at av.config.fname
-	return nil, nil
+	// recover from the most recent state at av.config.fname
+	fd, err := os.OpenFile(av.config.fname, os.O_RDONLY, 0644)
+	if err != nil {
+		return nil, err
+	}
+	defer fd.Close()
+
+	// read the retrieved log interval
+	var f, l uint64
+	_, err = fmt.Fscanf(fd, "%d\n%d\n", &f, &l)
+	if err != nil {
+		return nil, err
+	}
+
+	cmds := make([]pb.Command, 0, l-f)
+	for {
+
+		var commandLength int32
+		err := binary.Read(fd, binary.BigEndian, &commandLength)
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, err
+		}
+
+		serializedCmd := make([]byte, commandLength)
+		_, err = fd.Read(serializedCmd)
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, err
+		}
+
+		c := &pb.Command{}
+		err = proto.Unmarshal(serializedCmd, c)
+		if err != nil {
+			return nil, err
+		}
+		cmds = append(cmds, *c)
+	}
+	return retainLogInterval(&cmds, p, n), nil
 }
 
-// ReduceLog ...
+// RecovBytes ... returns an already serialized data, most efficient approach
+// when 'av.config.inmem == false' ... Describe the slicing protocol for pbuffs
+func (av *AVLTreeHT) RecovBytes(p, n uint64) ([]byte, error) {
+	av.mu.RLock()
+	defer av.mu.RUnlock()
+
+	// postponed log reduce now being executed ...
+	if av.config.tick == Delayed {
+		err := av.ReduceLog()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var rd io.Reader
+	if av.config.inmem {
+		cmds := retainLogInterval(av.recentLog, p, n)
+		buff := bytes.NewBuffer(nil)
+
+		// write requested delimiters for the current state
+		_, err := fmt.Fprintf(buff, "%d\n%d\n", p, n)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, c := range cmds {
+			raw, err := proto.Marshal(&c)
+			if err != nil {
+				return nil, err
+			}
+
+			// writing size of each serialized message as streaming delimiter
+			err = binary.Write(buff, binary.BigEndian, int32(len(raw)))
+			if err != nil {
+				return nil, err
+			}
+
+			_, err = buff.Write(raw)
+			if err != nil {
+				return nil, err
+			}
+		}
+		rd = buff
+
+	} else {
+		fd, err := os.OpenFile(av.config.fname, os.O_RDONLY, 0644)
+		if err != nil {
+			return nil, err
+		}
+		defer fd.Close()
+
+		// TODO: Determine which commands are within the requested interval [p, n]
+		// maybe de-serialize entire log again? discuss
+		rd = fd
+	}
+
+	logs, err := ioutil.ReadAll(rd)
+	if err != nil {
+		return nil, err
+	}
+	return logs, nil
+}
+
+// ReduceLog ... is only launched on thread-safe routines ... describe the slicing
+// protocol for logs and protobuffs on disk (delimiters, binary size, raw cmd)
 func (av *AVLTreeHT) ReduceLog() error {
 	cmds, err := ApplyReduceAlgo(av, av.config.alg, av.first, av.last)
 	if err != nil {
@@ -274,7 +384,36 @@ func (av *AVLTreeHT) ReduceLog() error {
 		return nil
 	}
 
-	// TODO: update the current state at av.config.fname
+	// update the current state at av.config.fname
+	fd, err := os.OpenFile(av.config.fname, os.O_TRUNC|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer fd.Close()
+
+	// write log delimiters for the current state
+	_, err = fmt.Fprintf(fd, "%d\n%d\n", av.first, av.last)
+	if err != nil {
+		return err
+	}
+
+	for _, c := range cmds {
+		raw, err := proto.Marshal(&c)
+		if err != nil {
+			return err
+		}
+
+		// writing size of each serialized message as streaming delimiter
+		err = binary.Write(fd, binary.BigEndian, int32(len(raw)))
+		if err != nil {
+			return err
+		}
+
+		_, err = fd.Write(raw)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -415,4 +554,20 @@ func stringRecurBFS(queue []*avlTreeNode, res []string) []string {
 		queue = append(queue, queue[0].right)
 	}
 	return stringRecurBFS(queue[1:], res)
+}
+
+// retainLogInterval receives an entire log and returns the corresponding log
+// matching [p, n] indexes.
+func retainLogInterval(log *[]pb.Command, p, n uint64) []pb.Command {
+	cmds := make([]pb.Command, 0, p-n)
+
+	// TODO: Later improve retrieve algorithm, exploiting the pre-ordering of
+	// commands based on c.Id. The idea is to simply identify the first and last
+	// underlying indexes and return a subslice copy.
+	for _, c := range *log {
+		if c.Id >= p && c.Id <= n {
+			cmds = append(cmds, c)
+		}
+	}
+	return cmds
 }
