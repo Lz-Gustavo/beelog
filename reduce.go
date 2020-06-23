@@ -88,7 +88,7 @@ func ApplyReduceAlgo(s Structure, r Reducer, p, n uint64) ([]pb.Command, error) 
 func BubblerList(l *List, p, n uint64) []pb.Command {
 	var (
 		rm bool
-		rc int
+		rc uint64
 		i  *listNode
 	)
 	log := make([]pb.Command, 0)
@@ -127,7 +127,7 @@ func BubblerList(l *List, p, n uint64) []pb.Command {
 // GreedyList returns an optimal solution.
 func GreedyList(l *List, p, n uint64) []pb.Command {
 	var (
-		rc   int
+		rc   uint64
 		i, j *listNode
 	)
 	log := make([]pb.Command, 0)

@@ -20,7 +20,7 @@ import (
 // implemented.
 type Structure interface {
 	Str() string
-	Len() int
+	Len() uint64
 	Log(index uint64, cmd pb.Command) error
 	Recov(p, n uint64) ([]pb.Command, error)
 	RecovBytes(p, n uint64) ([]byte, error)
@@ -35,7 +35,7 @@ type listNode struct {
 type List struct {
 	first   *listNode
 	tail    *listNode
-	len     int
+	len     uint64
 	visited bool
 }
 
@@ -49,7 +49,7 @@ func (l *List) Str() string {
 }
 
 // Len returns the list length.
-func (l *List) Len() int {
+func (l *List) Len() uint64 {
 	return l.len
 }
 
@@ -139,7 +139,7 @@ type avlTreeNode struct {
 type AVLTreeHT struct {
 	root *avlTreeNode
 	aux  *stateTable
-	len  int
+	len  uint64
 	mu   sync.RWMutex
 
 	config      *LogConfig
@@ -158,13 +158,18 @@ func NewAVLTreeHT() *AVLTreeHT {
 }
 
 // NewAVLTreeHTWithConfig ...
-func NewAVLTreeHTWithConfig(cfg *LogConfig) *AVLTreeHT {
+func NewAVLTreeHTWithConfig(cfg *LogConfig) (*AVLTreeHT, error) {
+	err := cfg.ValidateConfig()
+	if err != nil {
+		return nil, err
+	}
+
 	ht := make(stateTable, 0)
 	return &AVLTreeHT{
 		aux:    &ht,
 		len:    0,
 		config: cfg,
-	}
+	}, nil
 }
 
 // Str implements a BFS on the AVLTree, returning a string representation for the
@@ -195,7 +200,7 @@ func (av *AVLTreeHT) Str() string {
 }
 
 // Len returns the lenght, number of nodes on the tree.
-func (av *AVLTreeHT) Len() int {
+func (av *AVLTreeHT) Len() uint64 {
 	return av.len
 }
 
