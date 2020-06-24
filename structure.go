@@ -217,6 +217,9 @@ func (av *AVLTreeHT) Log(index uint64, cmd pb.Command) error {
 		return nil
 	}
 
+	// TODO: Ensure same index for now. Log API will change in time
+	cmd.Id = index
+
 	aNode := &avlTreeNode{
 		ind: index,
 		key: cmd.Key,
@@ -279,41 +282,7 @@ func (av *AVLTreeHT) Recov(p, n uint64) ([]pb.Command, error) {
 		return nil, err
 	}
 	defer fd.Close()
-
-	// read the retrieved log interval
-	var f, l uint64
-	_, err = fmt.Fscanf(fd, "%d\n%d\n", &f, &l)
-	if err != nil {
-		return nil, err
-	}
-
-	cmds := make([]pb.Command, 0, l-f)
-	for {
-
-		var commandLength int32
-		err := binary.Read(fd, binary.BigEndian, &commandLength)
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return nil, err
-		}
-
-		serializedCmd := make([]byte, commandLength)
-		_, err = fd.Read(serializedCmd)
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return nil, err
-		}
-
-		c := &pb.Command{}
-		err = proto.Unmarshal(serializedCmd, c)
-		if err != nil {
-			return nil, err
-		}
-		cmds = append(cmds, *c)
-	}
-	return retainLogInterval(&cmds, p, n), nil
+	return retainLogIntervalWhileUnmarshaling(fd, p, n)
 }
 
 // RecovBytes ... returns an already serialized data, most efficient approach
@@ -334,35 +303,10 @@ func (av *AVLTreeHT) RecovBytes(p, n uint64) ([]byte, error) {
 		}
 	}
 
-	var rd io.Reader
+	var log *[]pb.Command
 	if av.config.inmem {
 		cmds := retainLogInterval(av.recentLog, p, n)
-		buff := bytes.NewBuffer(nil)
-
-		// write requested delimiters for the current state
-		_, err := fmt.Fprintf(buff, "%d\n%d\n", p, n)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, c := range cmds {
-			raw, err := proto.Marshal(&c)
-			if err != nil {
-				return nil, err
-			}
-
-			// writing size of each serialized message as streaming delimiter
-			err = binary.Write(buff, binary.BigEndian, int32(len(raw)))
-			if err != nil {
-				return nil, err
-			}
-
-			_, err = buff.Write(raw)
-			if err != nil {
-				return nil, err
-			}
-		}
-		rd = buff
+		log = &cmds
 
 	} else {
 		fd, err := os.OpenFile(av.config.fname, os.O_RDONLY, 0644)
@@ -371,12 +315,22 @@ func (av *AVLTreeHT) RecovBytes(p, n uint64) ([]byte, error) {
 		}
 		defer fd.Close()
 
-		// TODO: Determine which commands are within the requested interval [p, n]
-		// maybe de-serialize entire log again? discuss
-		rd = fd
+		// TODO: Implement a more efficient way to determine which commands are
+		// within the requested interval [p, n] without serializing entire log again
+		cmds, err := retainLogIntervalWhileUnmarshaling(fd, p, n)
+		if err != nil {
+			return nil, err
+		}
+		log = &cmds
 	}
 
-	logs, err := ioutil.ReadAll(rd)
+	buff := bytes.NewBuffer(nil)
+	err := marshalLogIntoWriter(buff, log, p, n)
+	if err != nil {
+		return nil, err
+	}
+
+	logs, err := ioutil.ReadAll(buff)
 	if err != nil {
 		return nil, err
 	}
@@ -404,28 +358,9 @@ func (av *AVLTreeHT) ReduceLog() error {
 	}
 	defer fd.Close()
 
-	// write log delimiters for the current state
-	_, err = fmt.Fprintf(fd, "%d\n%d\n", av.first, av.last)
+	err = marshalLogIntoWriter(fd, &cmds, av.first, av.last)
 	if err != nil {
 		return err
-	}
-
-	for _, c := range cmds {
-		raw, err := proto.Marshal(&c)
-		if err != nil {
-			return err
-		}
-
-		// writing size of each serialized message as streaming delimiter
-		err = binary.Write(fd, binary.BigEndian, int32(len(raw)))
-		if err != nil {
-			return err
-		}
-
-		_, err = fd.Write(raw)
-		if err != nil {
-			return err
-		}
 	}
 	return nil
 }
@@ -583,4 +518,72 @@ func retainLogInterval(log *[]pb.Command, p, n uint64) []pb.Command {
 		}
 	}
 	return cmds
+}
+
+// retainLogIntervalWhileUnmarshaling ...
+func retainLogIntervalWhileUnmarshaling(logRd io.Reader, p, n uint64) ([]pb.Command, error) {
+	// read the retrieved log interval
+	var f, l uint64
+	_, err := fmt.Fscanf(logRd, "%d\n%d\n", &f, &l)
+	if err != nil {
+		return nil, err
+	}
+
+	cmds := make([]pb.Command, 0, n-p)
+	for {
+		var commandLength int32
+		err := binary.Read(logRd, binary.BigEndian, &commandLength)
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, err
+		}
+
+		serializedCmd := make([]byte, commandLength)
+		_, err = logRd.Read(serializedCmd)
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, err
+		}
+
+		c := &pb.Command{}
+		err = proto.Unmarshal(serializedCmd, c)
+		if err != nil {
+			return nil, err
+		}
+
+		// Within the requested interval? If not will be later GC
+		if c.Id >= p && c.Id <= n {
+			cmds = append(cmds, *c)
+		}
+	}
+	return cmds, nil
+}
+
+func marshalLogIntoWriter(logWr io.Writer, log *[]pb.Command, p, n uint64) error {
+	// write requested delimiters for the current state
+	_, err := fmt.Fprintf(logWr, "%d\n%d\n", p, n)
+	if err != nil {
+		return err
+	}
+
+	for _, c := range *log {
+		raw, err := proto.Marshal(&c)
+		if err != nil {
+			return err
+		}
+
+		// writing size of each serialized message as streaming delimiter
+		err = binary.Write(logWr, binary.BigEndian, int32(len(raw)))
+		if err != nil {
+			return err
+		}
+
+		_, err = logWr.Write(raw)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

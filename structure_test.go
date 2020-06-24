@@ -1,6 +1,10 @@
 package beelog
 
 import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
+	"io"
 	"math/rand"
 	"reflect"
 	"strconv"
@@ -8,6 +12,8 @@ import (
 	"time"
 
 	"github.com/Lz-Gustavo/beelog/pb"
+
+	"github.com/golang/protobuf/proto"
 )
 
 func TestAVLTreeLog(t *testing.T) {
@@ -58,7 +64,7 @@ func TestAVLTreeLog(t *testing.T) {
 
 func TestAVLTreeDifferentRecoveries(t *testing.T) {
 	nCmds, wrt, dif := uint64(2000), 50, 100
-	p, n := uint64(0), uint64(2000)
+	p, n := uint64(100), uint64(2000)
 	defAlg := IterDFSAvl
 
 	testCases := []LogConfig{
@@ -112,19 +118,69 @@ func TestAVLTreeDifferentRecoveries(t *testing.T) {
 			t.FailNow()
 		}
 
-		if !reflect.DeepEqual(redLog, log) {
-			t.Log("Slices not deeply equal")
+		if !logsAreEquivalent(redLog, log) {
+			t.Log("Logs are not equivalent")
+			t.Log(redLog)
+			t.Log(log)
 			t.FailNow()
 		}
 	}
 }
 
 func TestAVLTreeRecovBytesInterpretation(t *testing.T) {
-	// TODO: ...
-}
+	nCmds, wrt, dif := uint64(2000), 50, 100
+	p, n := uint64(100), uint64(2000)
+	defAlg := IterDFSAvl
 
-func TestAVLTreeDiskLogRetrieval(t *testing.T) {
-	// TODO: ...
+	testCases := []LogConfig{
+		{ // inmem byte recov
+			alg:   defAlg,
+			tick:  Delayed,
+			inmem: true,
+		},
+		{ // disk byte recov
+			alg:   defAlg,
+			tick:  Delayed,
+			inmem: false,
+			fname: "./logstate.out",
+		},
+	}
+
+	for i, tc := range testCases {
+		t.Log("====Executing Test Case #", i)
+
+		avl, err := generateRandAVLTreeHT(nCmds, wrt, dif, &tc)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		// the compacted log used for later comparison
+		redLog, err := ApplyReduceAlgo(avl, defAlg, p, n)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		raw, err := avl.RecovBytes(p, n)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		log, err := deserializeRawLog(raw)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		if !logsAreEquivalent(redLog, log) {
+			t.Log("Logs are not equivalent")
+			t.Log(redLog)
+			t.Log(log)
+			t.FailNow()
+		}
+	}
 }
 
 func generateRandList(n uint64, wrt, dif int) (*List, error) {
@@ -170,6 +226,7 @@ func generateRandAVLTreeHT(n uint64, wrt, dif int, cfg *LogConfig) (*AVLTreeHT, 
 		// only WRITE operations are recorded on the tree
 		if cn := r.Intn(100); cn < wrt {
 			cmd := pb.Command{
+				Id:    i,
 				Key:   strconv.Itoa(r.Intn(dif)),
 				Value: strconv.Itoa(r.Int()),
 				Op:    pb.Command_SET,
@@ -185,4 +242,69 @@ func generateRandAVLTreeHT(n uint64, wrt, dif int, cfg *LogConfig) (*AVLTreeHT, 
 		}
 	}
 	return avl, nil
+}
+
+// deserializeRawLog emulates the same procedure implemented by a recoverying
+// replica, interpreting the serialized log received from any byte stream.
+func deserializeRawLog(log []byte) ([]pb.Command, error) {
+	rd := bytes.NewReader(log)
+
+	// read the retrieved log interval
+	var f, l uint64
+	_, err := fmt.Fscanf(rd, "%d\n%d\n", &f, &l)
+	if err != nil {
+		return nil, err
+	}
+
+	cmds := make([]pb.Command, 0, l-f)
+	for {
+
+		var commandLength int32
+		err := binary.Read(rd, binary.BigEndian, &commandLength)
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, err
+		}
+
+		serializedCmd := make([]byte, commandLength)
+		_, err = rd.Read(serializedCmd)
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, err
+		}
+
+		c := &pb.Command{}
+		err = proto.Unmarshal(serializedCmd, c)
+		if err != nil {
+			return nil, err
+		}
+		cmds = append(cmds, *c)
+	}
+	return cmds, nil
+}
+
+// logsAreEquivalent checks iff ...
+func logsAreEquivalent(logA, logB []pb.Command) bool {
+	// not the same size, directly not equivalent
+	if len(logA) != len(logB) {
+		return false
+	}
+
+	// they are already deeply equal, same values on the same pos
+	if reflect.DeepEqual(logA, logB) {
+		return true
+	}
+
+	// apply each log on a hash table, checking if they have the same
+	// values for the same keys
+	htA := make(map[string]string)
+	htB := make(map[string]string)
+
+	for i := range logA {
+		htA[logA[i].Key] = logA[i].Value
+		htB[logB[i].Key] = logB[i].Value
+	}
+	return reflect.DeepEqual(htA, htB)
 }
