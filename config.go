@@ -18,30 +18,30 @@ const (
 
 // LogConfig ...
 type LogConfig struct {
-	alg   Reducer
-	tick  ReduceInterval
-	inmem bool
-	fname string
+	Alg   Reducer
+	Tick  ReduceInterval
+	Inmem bool
+	Fname string
 }
 
 // DefaultLogConfig ...
 func DefaultLogConfig() *LogConfig {
 	return &LogConfig{
-		alg:   IterDFSAvl,
-		tick:  Delayed,
-		inmem: true,
+		Alg:   IterDFSAvl,
+		Tick:  Delayed,
+		Inmem: true,
 	}
 }
 
 // ValidateConfig ...
 func (lc *LogConfig) ValidateConfig() error {
-	if (lc.alg != GreedyAvl) && (lc.alg != IterBFSAvl) && (lc.alg != IterDFSAvl) {
+	if (lc.Alg != GreedyAvl) && (lc.Alg != IterBFSAvl) && (lc.Alg != IterDFSAvl) {
 		return errors.New("invalid config: unknow reduce algorithm provided")
 	}
-	if (lc.tick != Immediately) && (lc.tick != Delayed) && (lc.tick != Interval) {
+	if (lc.Tick != Immediately) && (lc.Tick != Delayed) && (lc.Tick != Interval) {
 		return errors.New("invalid config: unknow reduce interval provided")
 	}
-	if !lc.inmem && lc.fname == "" {
+	if !lc.Inmem && lc.Fname == "" {
 		return errors.New("invalid config: if persistent storage (i.e. inmem == false), config.fname must be provided")
 	}
 	return nil

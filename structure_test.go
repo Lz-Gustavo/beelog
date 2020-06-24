@@ -69,26 +69,26 @@ func TestAVLTreeDifferentRecoveries(t *testing.T) {
 
 	testCases := []LogConfig{
 		{ // immediately inmem
-			alg:   defAlg,
-			tick:  Immediately,
-			inmem: true,
+			Alg:   defAlg,
+			Tick:  Immediately,
+			Inmem: true,
 		},
 		{ // delayed inmem
-			alg:   defAlg,
-			tick:  Delayed,
-			inmem: true,
+			Alg:   defAlg,
+			Tick:  Delayed,
+			Inmem: true,
 		},
 		{ // immediately disk
-			alg:   defAlg,
-			tick:  Immediately,
-			inmem: false,
-			fname: "./logstate.out",
+			Alg:   defAlg,
+			Tick:  Immediately,
+			Inmem: false,
+			Fname: "./logstate.out",
 		},
 		{ // delayed disk
-			alg:   defAlg,
-			tick:  Delayed,
-			inmem: false,
-			fname: "./logstate.out",
+			Alg:   defAlg,
+			Tick:  Delayed,
+			Inmem: false,
+			Fname: "./logstate.out",
 		},
 	}
 
@@ -134,15 +134,15 @@ func TestAVLTreeRecovBytesInterpretation(t *testing.T) {
 
 	testCases := []LogConfig{
 		{ // inmem byte recov
-			alg:   defAlg,
-			tick:  Delayed,
-			inmem: true,
+			Alg:   defAlg,
+			Tick:  Delayed,
+			Inmem: true,
 		},
 		{ // disk byte recov
-			alg:   defAlg,
-			tick:  Delayed,
-			inmem: false,
-			fname: "./logstate.out",
+			Alg:   defAlg,
+			Tick:  Delayed,
+			Inmem: false,
+			Fname: "./logstate.out",
 		},
 	}
 
@@ -285,14 +285,20 @@ func deserializeRawLog(log []byte) ([]pb.Command, error) {
 	return cmds, nil
 }
 
-// logsAreEquivalent checks iff ...
+// logsAreEquivalent checks if two command log sequences are equivalent with
+// one another. In this context, two logs 'a' and 'b' are considered 'equivalent'
+// iff the deterministic, sequentialy execution of key-value commands on 'b'
+// yields the same final state observed on executing 'a'. Two recovered sequences
+// from beelog can have commands on different orders, which is safe as long as
+// if a log posses a command 'c' on index 'i', no other log records a command 'k'
+// on 'i' where 'k' != 'c'.
 func logsAreEquivalent(logA, logB []pb.Command) bool {
 	// not the same size, directly not equivalent
 	if len(logA) != len(logB) {
 		return false
 	}
 
-	// they are already deeply equal, same values on the same pos
+	// they are already deeply equal, same values on the same positions
 	if reflect.DeepEqual(logA, logB) {
 		return true
 	}

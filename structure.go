@@ -248,7 +248,7 @@ func (av *AVLTreeHT) Log(index uint64, cmd pb.Command) error {
 	// adjust last index once inserted
 	av.last = index
 
-	if av.config.tick == Immediately {
+	if av.config.Tick == Immediately {
 		return av.ReduceLog()
 	}
 	return nil
@@ -260,43 +260,41 @@ func (av *AVLTreeHT) Recov(p, n uint64) ([]pb.Command, error) {
 	if n < p {
 		return nil, errors.New("invalid interval request, 'n' must be >= 'p'")
 	}
-
 	av.mu.RLock()
 	defer av.mu.RUnlock()
 
 	// postponed log reduce now being executed ...
-	if av.config.tick == Delayed {
+	if av.config.Tick == Delayed {
 		err := av.ReduceLog()
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	if av.config.inmem {
-		return retainLogInterval(av.recentLog, p, n), nil
+	if av.config.Inmem {
+		return RetainLogInterval(av.recentLog, p, n), nil
 	}
 
-	// recover from the most recent state at av.config.fname
-	fd, err := os.OpenFile(av.config.fname, os.O_RDONLY, 0644)
+	// recover from the most recent state at av.config.Fname
+	fd, err := os.OpenFile(av.config.Fname, os.O_RDONLY, 0644)
 	if err != nil {
 		return nil, err
 	}
 	defer fd.Close()
-	return retainLogIntervalWhileUnmarshaling(fd, p, n)
+	return RetainLogIntervalWhileUnmarshaling(fd, p, n)
 }
 
 // RecovBytes ... returns an already serialized data, most efficient approach
-// when 'av.config.inmem == false' ... Describe the slicing protocol for pbuffs
+// when 'av.config.Inmem == false' ... Describe the slicing protocol for pbuffs
 func (av *AVLTreeHT) RecovBytes(p, n uint64) ([]byte, error) {
 	if n < p {
 		return nil, errors.New("invalid interval request, 'n' must be >= 'p'")
 	}
-
 	av.mu.RLock()
 	defer av.mu.RUnlock()
 
 	// postponed log reduce now being executed ...
-	if av.config.tick == Delayed {
+	if av.config.Tick == Delayed {
 		err := av.ReduceLog()
 		if err != nil {
 			return nil, err
@@ -304,12 +302,12 @@ func (av *AVLTreeHT) RecovBytes(p, n uint64) ([]byte, error) {
 	}
 
 	var log *[]pb.Command
-	if av.config.inmem {
-		cmds := retainLogInterval(av.recentLog, p, n)
+	if av.config.Inmem {
+		cmds := RetainLogInterval(av.recentLog, p, n)
 		log = &cmds
 
 	} else {
-		fd, err := os.OpenFile(av.config.fname, os.O_RDONLY, 0644)
+		fd, err := os.OpenFile(av.config.Fname, os.O_RDONLY, 0644)
 		if err != nil {
 			return nil, err
 		}
@@ -317,7 +315,7 @@ func (av *AVLTreeHT) RecovBytes(p, n uint64) ([]byte, error) {
 
 		// TODO: Implement a more efficient way to determine which commands are
 		// within the requested interval [p, n] without serializing entire log again
-		cmds, err := retainLogIntervalWhileUnmarshaling(fd, p, n)
+		cmds, err := RetainLogIntervalWhileUnmarshaling(fd, p, n)
 		if err != nil {
 			return nil, err
 		}
@@ -325,7 +323,7 @@ func (av *AVLTreeHT) RecovBytes(p, n uint64) ([]byte, error) {
 	}
 
 	buff := bytes.NewBuffer(nil)
-	err := marshalLogIntoWriter(buff, log, p, n)
+	err := MarshalLogIntoWriter(buff, log, p, n)
 	if err != nil {
 		return nil, err
 	}
@@ -340,25 +338,25 @@ func (av *AVLTreeHT) RecovBytes(p, n uint64) ([]byte, error) {
 // ReduceLog ... is only launched on thread-safe routines ... describe the slicing
 // protocol for logs and protobuffs on disk (delimiters, binary size, raw cmd)
 func (av *AVLTreeHT) ReduceLog() error {
-	cmds, err := ApplyReduceAlgo(av, av.config.alg, av.first, av.last)
+	cmds, err := ApplyReduceAlgo(av, av.config.Alg, av.first, av.last)
 	if err != nil {
 		return err
 	}
 
-	if av.config.inmem {
+	if av.config.Inmem {
 		// update the most recent inmem log state
 		av.recentLog = &cmds
 		return nil
 	}
 
-	// update the current state at av.config.fname
-	fd, err := os.OpenFile(av.config.fname, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	// update the current state at av.config.Fname
+	fd, err := os.OpenFile(av.config.Fname, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
 	defer fd.Close()
 
-	err = marshalLogIntoWriter(fd, &cmds, av.first, av.last)
+	err = MarshalLogIntoWriter(fd, &cmds, av.first, av.last)
 	if err != nil {
 		return err
 	}
@@ -504,9 +502,9 @@ func stringRecurBFS(queue []*avlTreeNode, res []string) []string {
 	return stringRecurBFS(queue[1:], res)
 }
 
-// retainLogInterval receives an entire log and returns the corresponding log
+// RetainLogInterval receives an entire log and returns the corresponding log
 // matching [p, n] indexes.
-func retainLogInterval(log *[]pb.Command, p, n uint64) []pb.Command {
+func RetainLogInterval(log *[]pb.Command, p, n uint64) []pb.Command {
 	cmds := make([]pb.Command, 0, n-p)
 
 	// TODO: Later improve retrieve algorithm, exploiting the pre-ordering of
@@ -520,8 +518,8 @@ func retainLogInterval(log *[]pb.Command, p, n uint64) []pb.Command {
 	return cmds
 }
 
-// retainLogIntervalWhileUnmarshaling ...
-func retainLogIntervalWhileUnmarshaling(logRd io.Reader, p, n uint64) ([]pb.Command, error) {
+// RetainLogIntervalWhileUnmarshaling ...
+func RetainLogIntervalWhileUnmarshaling(logRd io.Reader, p, n uint64) ([]pb.Command, error) {
 	// read the retrieved log interval
 	var f, l uint64
 	_, err := fmt.Fscanf(logRd, "%d\n%d\n", &f, &l)
@@ -561,7 +559,8 @@ func retainLogIntervalWhileUnmarshaling(logRd io.Reader, p, n uint64) ([]pb.Comm
 	return cmds, nil
 }
 
-func marshalLogIntoWriter(logWr io.Writer, log *[]pb.Command, p, n uint64) error {
+// MarshalLogIntoWriter ...
+func MarshalLogIntoWriter(logWr io.Writer, log *[]pb.Command, p, n uint64) error {
 	// write requested delimiters for the current state
 	_, err := fmt.Fprintf(logWr, "%d\n%d\n", p, n)
 	if err != nil {
