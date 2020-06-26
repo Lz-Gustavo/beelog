@@ -18,10 +18,11 @@ const (
 
 // LogConfig ...
 type LogConfig struct {
-	Alg   Reducer
-	Tick  ReduceInterval
-	Inmem bool
-	Fname string
+	Alg    Reducer
+	Tick   ReduceInterval
+	Inmem  bool
+	Fname  string
+	Period uint32
 }
 
 // DefaultLogConfig ...
@@ -42,7 +43,10 @@ func (lc *LogConfig) ValidateConfig() error {
 		return errors.New("invalid config: unknow reduce interval provided")
 	}
 	if !lc.Inmem && lc.Fname == "" {
-		return errors.New("invalid config: if persistent storage (i.e. inmem == false), config.fname must be provided")
+		return errors.New("invalid config: if persistent storage (i.e. Inmem == false), config.Fname must be provided")
+	}
+	if lc.Tick == Interval && lc.Period == 0 {
+		return errors.New("invalid config: if periodic reduce is set (i.e. Tick == Interval), a config.Period must be provided")
 	}
 	return nil
 }

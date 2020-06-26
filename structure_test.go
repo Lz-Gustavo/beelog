@@ -63,8 +63,10 @@ func TestAVLTreeLog(t *testing.T) {
 }
 
 func TestAVLTreeDifferentRecoveries(t *testing.T) {
-	nCmds, wrt, dif := uint64(2000), 50, 100
-	p, n := uint64(100), uint64(2000)
+	// Requesting the last matching index (i.e. n == nCmds) is mandatory
+	// on Immediately and Interval configurations.
+	nCmds, wrt, dif := uint64(2000), 50, 10
+	p, n := uint64(10), uint64(2000)
 	defAlg := IterDFSAvl
 
 	testCases := []LogConfig{
@@ -78,6 +80,12 @@ func TestAVLTreeDifferentRecoveries(t *testing.T) {
 			Tick:  Delayed,
 			Inmem: true,
 		},
+		{ // interval inmem
+			Alg:    defAlg,
+			Tick:   Interval,
+			Period: 100,
+			Inmem:  true,
+		},
 		{ // immediately disk
 			Alg:   defAlg,
 			Tick:  Immediately,
@@ -89,6 +97,13 @@ func TestAVLTreeDifferentRecoveries(t *testing.T) {
 			Tick:  Delayed,
 			Inmem: false,
 			Fname: "./logstate.out",
+		},
+		{ // interval disk
+			Alg:    defAlg,
+			Tick:   Interval,
+			Period: 100,
+			Inmem:  false,
+			Fname:  "./logstate.out",
 		},
 	}
 
@@ -129,7 +144,7 @@ func TestAVLTreeDifferentRecoveries(t *testing.T) {
 
 func TestAVLTreeRecovBytesInterpretation(t *testing.T) {
 	nCmds, wrt, dif := uint64(2000), 50, 100
-	p, n := uint64(100), uint64(2000)
+	p, n := uint64(100), uint64(1500)
 	defAlg := IterDFSAvl
 
 	testCases := []LogConfig{
@@ -223,22 +238,25 @@ func generateRandAVLTreeHT(n uint64, wrt, dif int, cfg *LogConfig) (*AVLTreeHT, 
 	}
 
 	for i := uint64(0); i < n; i++ {
-		// only WRITE operations are recorded on the tree
+		var cmd pb.Command
 		if cn := r.Intn(100); cn < wrt {
-			cmd := pb.Command{
+			cmd = pb.Command{
 				Id:    i,
 				Key:   strconv.Itoa(r.Intn(dif)),
 				Value: strconv.Itoa(r.Int()),
 				Op:    pb.Command_SET,
 			}
 
-			err = avl.Log(i, cmd)
-			if err != nil {
-				return nil, err
-			}
-
 		} else {
-			continue
+			// only SETS states are needed
+			cmd = pb.Command{
+				Id: i,
+				Op: pb.Command_GET,
+			}
+		}
+		err = avl.Log(i, cmd)
+		if err != nil {
+			return nil, err
 		}
 	}
 	return avl, nil

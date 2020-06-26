@@ -145,6 +145,7 @@ type AVLTreeHT struct {
 	config      *LogConfig
 	first, last uint64
 	recentLog   *[]pb.Command // used only on Immediately inmem config
+	count       uint32        // used on Interval config
 }
 
 // NewAVLTreeHT ...
@@ -214,7 +215,7 @@ func (av *AVLTreeHT) Log(index uint64, cmd pb.Command) error {
 	if cmd.Op != pb.Command_SET {
 		// TODO: treat 'av.first' attribution on GETs
 		av.last = index
-		return nil
+		return av.mayTriggerReduce()
 	}
 
 	// TODO: Ensure same index for now. Log API will change in time
@@ -248,10 +249,11 @@ func (av *AVLTreeHT) Log(index uint64, cmd pb.Command) error {
 	// adjust last index once inserted
 	av.last = index
 
+	// Immediately recovery entirely reduces the log to its minimal format
 	if av.config.Tick == Immediately {
-		return av.ReduceLog()
+		return av.ReduceLog(av.first, av.last)
 	}
-	return nil
+	return av.mayTriggerReduce()
 }
 
 // Recov ... mention that when 'inmem' is true the persistent way is ineficient,
@@ -263,16 +265,24 @@ func (av *AVLTreeHT) Recov(p, n uint64) ([]pb.Command, error) {
 	av.mu.RLock()
 	defer av.mu.RUnlock()
 
-	// postponed log reduce now being executed ...
+	// reduced if delayed config or first 'av.config.Period' wasnt reached yet
 	if av.config.Tick == Delayed {
-		err := av.ReduceLog()
+		err := av.ReduceLog(p, n)
+		if err != nil {
+			return nil, err
+		}
+
+	} else if av.config.Tick == Interval && !av.firstReduceExists() {
+		// must reduce the entire structure, just the desired interval would
+		// be incoherent with the Interval config
+		err := av.ReduceLog(av.first, av.last)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if av.config.Inmem {
-		return RetainLogInterval(av.recentLog, p, n), nil
+		return *av.recentLog, nil
 	}
 
 	// recover from the most recent state at av.config.Fname
@@ -281,7 +291,7 @@ func (av *AVLTreeHT) Recov(p, n uint64) ([]pb.Command, error) {
 		return nil, err
 	}
 	defer fd.Close()
-	return RetainLogIntervalWhileUnmarshaling(fd, p, n)
+	return UnmarshalLogFromReader(fd)
 }
 
 // RecovBytes ... returns an already serialized data, most efficient approach
@@ -293,18 +303,30 @@ func (av *AVLTreeHT) RecovBytes(p, n uint64) ([]byte, error) {
 	av.mu.RLock()
 	defer av.mu.RUnlock()
 
-	// postponed log reduce now being executed ...
+	// reduced if delayed config or first 'av.config.Period' wasnt reached yet
 	if av.config.Tick == Delayed {
-		err := av.ReduceLog()
+		err := av.ReduceLog(p, n)
+		if err != nil {
+			return nil, err
+		}
+
+	} else if av.config.Tick == Interval && !av.firstReduceExists() {
+		// must reduce the entire structure, just the desired interval would
+		// be incoherent with the Interval config
+		err := av.ReduceLog(av.first, av.last)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	var log *[]pb.Command
+	var rd io.Reader
 	if av.config.Inmem {
-		cmds := RetainLogInterval(av.recentLog, p, n)
-		log = &cmds
+		buff := bytes.NewBuffer(nil)
+		err := MarshalLogIntoWriter(buff, av.recentLog, av.first, av.last)
+		if err != nil {
+			return nil, err
+		}
+		rd = buff
 
 	} else {
 		fd, err := os.OpenFile(av.config.Fname, os.O_RDONLY, 0644)
@@ -312,33 +334,19 @@ func (av *AVLTreeHT) RecovBytes(p, n uint64) ([]byte, error) {
 			return nil, err
 		}
 		defer fd.Close()
-
-		// TODO: Implement a more efficient way to determine which commands are
-		// within the requested interval [p, n] without serializing entire log again
-		cmds, err := RetainLogIntervalWhileUnmarshaling(fd, p, n)
-		if err != nil {
-			return nil, err
-		}
-		log = &cmds
+		rd = fd
 	}
 
-	buff := bytes.NewBuffer(nil)
-	err := MarshalLogIntoWriter(buff, log, p, n)
-	if err != nil {
-		return nil, err
-	}
-
-	logs, err := ioutil.ReadAll(buff)
+	logs, err := ioutil.ReadAll(rd)
 	if err != nil {
 		return nil, err
 	}
 	return logs, nil
 }
 
-// ReduceLog ... is only launched on thread-safe routines ... describe the slicing
-// protocol for logs and protobuffs on disk (delimiters, binary size, raw cmd)
-func (av *AVLTreeHT) ReduceLog() error {
-	cmds, err := ApplyReduceAlgo(av, av.config.Alg, av.first, av.last)
+// ReduceLog ... is only launched on thread-safe routines ...
+func (av *AVLTreeHT) ReduceLog(p, n uint64) error {
+	cmds, err := ApplyReduceAlgo(av, av.config.Alg, p, n)
 	if err != nil {
 		return err
 	}
@@ -361,6 +369,35 @@ func (av *AVLTreeHT) ReduceLog() error {
 		return err
 	}
 	return nil
+}
+
+// mayTriggerReduce ... unsafe ... must be called from mutual exclusion ...
+func (av *AVLTreeHT) mayTriggerReduce() error {
+	if av.config.Tick != Interval {
+		return nil
+	}
+	av.count++
+	if av.count >= av.config.Period {
+		av.count = 0
+		return av.ReduceLog(av.first, av.last)
+	}
+	return nil
+}
+
+// firstReduceExists is execute on Interval tick config, and checks if a ReduceLog
+// procedure was already executed. False is returned if no recent reduced state is
+// found (i.e. first 'av.config.Period' wasnt reached yet).
+func (av *AVLTreeHT) firstReduceExists() bool {
+	if av.config.Inmem {
+		return av.recentLog != nil
+	}
+
+	// disk config, found any state file
+	// TODO: verify if the found file has a matching interval?
+	if _, exists := os.Stat(av.config.Fname); exists == nil {
+		return true
+	}
+	return false
 }
 
 // insert recursively inserts a node on the tree structure on O(lg n) operations,
@@ -518,8 +555,8 @@ func RetainLogInterval(log *[]pb.Command, p, n uint64) []pb.Command {
 	return cmds
 }
 
-// RetainLogIntervalWhileUnmarshaling ...
-func RetainLogIntervalWhileUnmarshaling(logRd io.Reader, p, n uint64) ([]pb.Command, error) {
+// UnmarshalLogFromReader ...
+func UnmarshalLogFromReader(logRd io.Reader) ([]pb.Command, error) {
 	// read the retrieved log interval
 	var f, l uint64
 	_, err := fmt.Fscanf(logRd, "%d\n%d\n", &f, &l)
@@ -527,7 +564,7 @@ func RetainLogIntervalWhileUnmarshaling(logRd io.Reader, p, n uint64) ([]pb.Comm
 		return nil, err
 	}
 
-	cmds := make([]pb.Command, 0, n-p)
+	cmds := make([]pb.Command, 0, l-f)
 	for {
 		var commandLength int32
 		err := binary.Read(logRd, binary.BigEndian, &commandLength)
@@ -550,16 +587,13 @@ func RetainLogIntervalWhileUnmarshaling(logRd io.Reader, p, n uint64) ([]pb.Comm
 		if err != nil {
 			return nil, err
 		}
-
-		// Within the requested interval? If not will be later GC
-		if c.Id >= p && c.Id <= n {
-			cmds = append(cmds, *c)
-		}
+		cmds = append(cmds, *c)
 	}
 	return cmds, nil
 }
 
-// MarshalLogIntoWriter ...
+// MarshalLogIntoWriter ... describe the slicing protocol for logs and protobuffs
+// on disk (delimiters, binary size, raw cmd)
 func MarshalLogIntoWriter(logWr io.Writer, log *[]pb.Command, p, n uint64) error {
 	// write requested delimiters for the current state
 	_, err := fmt.Fprintf(logWr, "%d\n%d\n", p, n)
