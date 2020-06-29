@@ -16,6 +16,10 @@ import (
 	"github.com/golang/protobuf/proto"
 )
 
+func TestListHTLog(t *testing.T) {
+	// TODO
+}
+
 func TestAVLTreeLog(t *testing.T) {
 	avl := NewAVLTreeHT()
 	first := uint64(1)
@@ -62,6 +66,7 @@ func TestAVLTreeLog(t *testing.T) {
 	}
 }
 
+// TODO: Append recovery tests for the new ListHT structure
 func TestAVLTreeDifferentRecoveries(t *testing.T) {
 	// Requesting the last matching index (i.e. n == nCmds) is mandatory
 	// on Immediately and Interval configurations.
@@ -142,6 +147,7 @@ func TestAVLTreeDifferentRecoveries(t *testing.T) {
 	}
 }
 
+// TODO: Append recovery tests for the new ListHT structure
 func TestAVLTreeRecovBytesInterpretation(t *testing.T) {
 	nCmds, wrt, dif := uint64(2000), 50, 100
 	p, n := uint64(100), uint64(1500)
@@ -198,10 +204,11 @@ func TestAVLTreeRecovBytesInterpretation(t *testing.T) {
 	}
 }
 
-func generateRandList(n uint64, wrt, dif int) (*List, error) {
+// TODO: Reimplement this procedure adapting for the new ListHT structure
+func generateRandList(n uint64, wrt, dif int) (*ListHT, error) {
 	srand := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(srand)
-	l := &List{}
+	l := NewListHT()
 
 	for i := uint64(0); i < n; i++ {
 

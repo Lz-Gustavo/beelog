@@ -16,35 +16,18 @@ import (
 func TestListAlgos(t *testing.T) {
 	debugOutput := false
 	testCases := []struct {
-		name     string
 		nCmds    uint64
 		pWrts    int
 		diffKeys int
 		alg      Reducer
 	}{
 		{
-			"Case1",
-			20,
-			100,
-			5,
-			BubblerLt,
-		},
-		{
-			"Case2",
 			20,
 			100,
 			5,
 			GreedyLt,
 		},
 		{
-			"Case3",
-			2000,
-			90,
-			1000,
-			BubblerLt,
-		},
-		{
-			"Case4",
 			2000,
 			90,
 			1000,
@@ -52,10 +35,10 @@ func TestListAlgos(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
+	for i, tc := range testCases {
 		l, err := generateRandList(tc.nCmds, tc.pWrts, tc.diffKeys)
 		if err != nil {
-			t.Log("test", tc.name, "failed with err:", err.Error())
+			t.Log("test num", i, "failed with err:", err.Error())
 			t.FailNow()
 		}
 
@@ -65,7 +48,7 @@ func TestListAlgos(t *testing.T) {
 
 		_, err = ApplyReduceAlgo(l, tc.alg, 0, uint64(tc.nCmds-1))
 		if err != nil {
-			t.Log("test", tc.name, "failed with err:", err.Error())
+			t.Log("test num", i, "failed with err:", err.Error())
 			t.FailNow()
 		}
 

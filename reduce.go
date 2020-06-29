@@ -14,12 +14,14 @@ const (
 	// that command dependencies are identified on each iteration considering
 	// the result of the prior. Does not provided an optimal solution unlike
 	// the others.
-	BubblerLt Reducer = iota
+	// BubblerLt
 
 	// GreedyLt is a greedy approach of the first algorithm. On each iteration,
 	// the algorithm continues iterating over the list removing any prior
 	// occurence of writes on that particular key.
-	GreedyLt
+	//
+	// TODO: modify greedy description
+	GreedyLt Reducer = iota
 
 	// GreedyAvl recursively implements a greedy search over LogAVL structures.
 	// On each iteration, the algorithm continues iterating over the key update
@@ -65,12 +67,8 @@ func ApplyReduceAlgo(s Structure, r Reducer, p, n uint64) ([]pb.Command, error) 
 		}
 		break
 
-	case *List:
+	case *ListHT:
 		switch r {
-		case BubblerLt:
-			log = BubblerList(st, p, n)
-			break
-
 		case GreedyLt:
 			log = GreedyList(st, p, n)
 			break
@@ -86,8 +84,10 @@ func ApplyReduceAlgo(s Structure, r Reducer, p, n uint64) ([]pb.Command, error) 
 	return log, nil
 }
 
-// BubblerList is the simpliest algorithm.
-func BubblerList(l *List, p, n uint64) []pb.Command {
+// BubblerList doesnt provide an optimal solution.
+//
+// NOTE: Deprecated for now, will be later removed when safe.
+func BubblerList(l *ListHT, p, n uint64) []pb.Command {
 	var (
 		rm bool
 		rc uint64
@@ -97,7 +97,7 @@ func BubblerList(l *List, p, n uint64) []pb.Command {
 
 	for {
 		rm = false
-		for i = l.first; i != nil && i.next != nil; i = i.next {
+		for i = l.lt.first; i != nil && i.next != nil; i = i.next {
 
 			cmd := i.val.(State).cmd
 			neigh := i.next.val.(State).cmd
@@ -109,15 +109,15 @@ func BubblerList(l *List, p, n uint64) []pb.Command {
 				rc++
 			}
 		}
-		l.tail = i
+		l.lt.tail = i
 
 		if !rm {
 			break
 		}
 	}
-	l.len -= rc
+	l.lt.len -= rc
 
-	for i = l.first; i != nil; i = i.next {
+	for i = l.lt.first; i != nil; i = i.next {
 		st := i.val.(State)
 		if st.ind >= p && st.ind <= n {
 			log = append(log, st.cmd)
@@ -126,8 +126,10 @@ func BubblerList(l *List, p, n uint64) []pb.Command {
 	return log
 }
 
-// GreedyList returns an optimal solution.
-func GreedyList(l *List, p, n uint64) []pb.Command {
+// OldGreedyList returns an optimal solution.
+//
+// NOTE: Deprecated for now, will be later removed when safe.
+func OldGreedyList(l *ListHT, p, n uint64) []pb.Command {
 	var (
 		rc   uint64
 		i, j *listNode
@@ -135,7 +137,7 @@ func GreedyList(l *List, p, n uint64) []pb.Command {
 	log := make([]pb.Command, 0)
 
 	// iterator i can reach nil value on the last j iteration
-	for i = l.first; i != nil && i.next != nil; i = i.next {
+	for i = l.lt.first; i != nil && i.next != nil; i = i.next {
 
 		st := i.val.(State)
 		priorNeigh := i
@@ -157,7 +159,15 @@ func GreedyList(l *List, p, n uint64) []pb.Command {
 			log = append(log, st.cmd)
 		}
 	}
-	l.len -= rc
+	l.lt.len -= rc
+	return log
+}
+
+// GreedyList ...
+func GreedyList(l *ListHT, p, n uint64) []pb.Command {
+	log := make([]pb.Command, 0)
+	// TODO: binary search, then linear greedy search on the state list
+	// transversal
 	return log
 }
 
@@ -169,7 +179,7 @@ func GreedyAVLTreeHT(avl *AVLTreeHT, p, n uint64) []pb.Command {
 	return log
 }
 
-func greedyRecur(avl *AVLTreeHT, k *avlTreeNode, p, n uint64, log *[]pb.Command) {
+func greedyRecur(avl *AVLTreeHT, k *avlTreeEntry, p, n uint64, log *[]pb.Command) {
 	// nil or key already satisfied in the log
 	if k == nil {
 		return
@@ -199,8 +209,8 @@ func greedyRecur(avl *AVLTreeHT, k *avlTreeNode, p, n uint64, log *[]pb.Command)
 func IterBFSAVLTreeHT(avl *AVLTreeHT, p, n uint64) []pb.Command {
 	log := []pb.Command{}
 	avl.resetVisitedValues()
-	queue := []*avlTreeNode{avl.root}
-	var u *avlTreeNode
+	queue := []*avlTreeEntry{avl.root}
+	var u *avlTreeEntry
 
 	for len(queue) != 0 {
 
@@ -233,8 +243,8 @@ func IterBFSAVLTreeHT(avl *AVLTreeHT, p, n uint64) []pb.Command {
 func IterDFSAVLTreeHT(avl *AVLTreeHT, p, n uint64) []pb.Command {
 	log := []pb.Command{}
 	avl.resetVisitedValues()
-	queue := []*avlTreeNode{avl.root}
-	var u *avlTreeNode
+	queue := []*avlTreeEntry{avl.root}
+	var u *avlTreeEntry
 
 	for ln := len(queue); ln != 0; ln = len(queue) {
 

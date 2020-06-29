@@ -58,14 +58,13 @@ func TranslateGen(id StructID) Generator {
 }
 
 // ListGen generates a random log following the LogList representation.
+// TODO: Reimplement this procedure adapting for the new ListHT structure
 func ListGen(n, wrt, dif int) (bl.Structure, error) {
-
 	srand := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(srand)
-	l := &bl.List{}
+	l := bl.NewListHT()
 
 	for i := 0; i < n; i++ {
-
 		if cn := r.Intn(100); cn < wrt {
 			cmd := pb.Command{
 				Key:   strconv.Itoa(r.Intn(dif)),
@@ -85,13 +84,11 @@ func ListGen(n, wrt, dif int) (bl.Structure, error) {
 
 // AVLTreeHTGen generates a random log following the LogAVL representation.
 func AVLTreeHTGen(n, wrt, dif int) (bl.Structure, error) {
-
 	srand := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(srand)
 	avl := bl.NewAVLTreeHT()
 
 	for i := 0; i < n; i++ {
-
 		// only WRITE operations are recorded on the tree
 		if cn := r.Intn(100); cn < wrt {
 			cmd := pb.Command{
@@ -133,7 +130,6 @@ func TranslateConst(id StructID) Constructor {
 
 // AVLTreeHTConst constructs a command log following the LogAVL representation.
 func AVLTreeHTConst(fn string) (bl.Structure, int, error) {
-
 	log, err := parseLog(fn)
 	if err != nil {
 		return nil, 0, err
