@@ -36,7 +36,7 @@ func DefaultLogConfig() *LogConfig {
 
 // ValidateConfig ...
 func (lc *LogConfig) ValidateConfig() error {
-	if (lc.Alg != GreedyAvl) && (lc.Alg != IterBFSAvl) && (lc.Alg != IterDFSAvl) {
+	if (lc.Alg != GreedyLt) && (lc.Alg != GreedyAvl) && (lc.Alg != IterBFSAvl) && (lc.Alg != IterDFSAvl) {
 		return errors.New("invalid config: unknow reduce algorithm provided")
 	}
 	if (lc.Tick != Immediately) && (lc.Tick != Delayed) && (lc.Tick != Interval) {

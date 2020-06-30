@@ -36,25 +36,25 @@ func TestListAlgos(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		l, err := generateRandList(tc.nCmds, tc.pWrts, tc.diffKeys)
+		l, err := generateRandListHT(tc.nCmds, tc.pWrts, tc.diffKeys, nil)
 		if err != nil {
 			t.Log("test num", i, "failed with err:", err.Error())
 			t.FailNow()
 		}
 
 		if debugOutput {
-			t.Log("Init:\n", l.Str())
+			t.Log("Init with", l.Len(), "commands:\n", l.Str())
 		}
 
-		_, err = ApplyReduceAlgo(l, tc.alg, 0, uint64(tc.nCmds-1))
+		log, err := ApplyReduceAlgo(l, tc.alg, 0, l.Len())
 		if err != nil {
 			t.Log("test num", i, "failed with err:", err.Error())
 			t.FailNow()
 		}
 
-		t.Log("Removed commands:", tc.nCmds-1-uint64(l.Len()))
+		t.Log("Removed commands:", l.Len()-uint64(len(log)))
 		if debugOutput {
-			t.Log("After Reduce:\n", l.Str())
+			t.Log("Reduced Log:\n", log)
 		}
 	}
 }

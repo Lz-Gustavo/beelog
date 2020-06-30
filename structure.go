@@ -75,6 +75,24 @@ func (l *list) pop() *listNode {
 	return aux
 }
 
+// similar to Floyd's tortoise and hare algorithm
+func findMidInList(start, last *listNode) *listNode {
+	if start == nil || last == nil {
+		return nil
+	}
+	slow := start
+	fast := start.next
+
+	for fast != last {
+		fast = fast.next
+		if fast != last {
+			slow = slow.next
+			fast = fast.next
+		}
+	}
+	return slow
+}
+
 // State represents a new state, a command execution happening on a certain
 // consensus index, analogous to a logical clock event.
 type State struct {
@@ -263,6 +281,11 @@ func (l *ListHT) Log(index uint64, cmd pb.Command) error {
 	lNode := (*l.aux)[cmd.Key].push(st)
 	entry.ptr = lNode
 
+	// adjust first structure index
+	if l.lt.tail == nil {
+		l.first = entry.ind
+	}
+
 	// insert new entry on the main list
 	l.lt.push(entry)
 
@@ -345,6 +368,39 @@ func (l *ListHT) mayExecuteLazyReduce(p, n uint64) error {
 		}
 	}
 	return nil
+}
+
+func (l *ListHT) searchEntryNodeByIndex(ind uint64) *listNode {
+	start := l.lt.first
+	last := l.lt.tail
+
+	var mid *listNode
+	for last != start {
+
+		mid = findMidInList(start, last)
+		ent := mid.val.(*listEntry)
+
+		// found in mid
+		if ent.ind == ind {
+			return mid
+
+			// greater
+		} else if ind > ent.ind {
+			start = mid.next
+
+			// less
+		} else {
+			last = mid
+		}
+	}
+	// instead of nil, return the nearest element
+	return mid
+}
+
+func (l *ListHT) resetVisitedValues() {
+	for _, list := range *l.aux {
+		list.visited = false
+	}
 }
 
 type avlTreeEntry struct {

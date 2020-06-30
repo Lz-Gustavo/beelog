@@ -16,43 +16,40 @@ import (
 	"github.com/golang/protobuf/proto"
 )
 
-func TestListHTLog(t *testing.T) {
-	// TODO
-}
-
-func TestAVLTreeLog(t *testing.T) {
-	avl := NewAVLTreeHT()
+func TestStructuresLog(t *testing.T) {
 	first := uint64(1)
 	n := uint64(1000)
+	avl := NewAVLTreeHT()
+	lt := NewListHT()
 
-	// populate some SET commands
-	for i := first; i < n; i++ {
+	for _, st := range []Structure{avl, lt} {
+		// populate some SET commands
+		for i := first; i < n; i++ {
+			// TODO: yeah, I will change this API of index log in time
+			err := st.Log(i, pb.Command{Id: i, Op: pb.Command_SET})
+			if err != nil {
+				t.Log(err.Error())
+				t.FailNow()
+			}
+		}
+		l := st.Len()
+		if l != n-first {
+			t.Log(l, "commands, expected", n-first)
+			t.FailNow()
+		}
 
-		// TODO: yeah, I will change this API of index log in time
-		err := avl.Log(i, pb.Command{Id: i, Op: pb.Command_SET})
+		// log another GET
+		err := st.Log(n, pb.Command{Id: n, Op: pb.Command_GET})
 		if err != nil {
 			t.Log(err.Error())
 			t.FailNow()
 		}
-	}
 
-	l := avl.Len()
-	if l != n-first {
-		t.Log(l, "commands, expected", n-first)
-		t.FailNow()
-	}
-
-	// log another GET
-	err := avl.Log(n, pb.Command{Id: n, Op: pb.Command_GET})
-	if err != nil {
-		t.Log(err.Error())
-		t.FailNow()
-	}
-
-	// GET command shouldnt increase size, but modify 'avl.last' index
-	if l != avl.Len() {
-		t.Log(l, "commands, expected", n-first)
-		t.FailNow()
+		// GET command shouldnt increase size, but modify 'avl.last' index
+		if l != st.Len() {
+			t.Log(l, "commands, expected", n-first)
+			t.FailNow()
+		}
 	}
 
 	// indexes should be 'first' and 'n', considering n-1 SETS + 1 GET
@@ -64,10 +61,19 @@ func TestAVLTreeLog(t *testing.T) {
 		t.Log("last cmd index is", avl.last, ", expected", n)
 		t.FailNow()
 	}
+
+	// same as list indexes
+	if lt.first != first {
+		t.Log("first cmd index is", lt.first, ", expected", first)
+		t.FailNow()
+	}
+	if lt.last != n {
+		t.Log("last cmd index is", lt.last, ", expected", n)
+		t.FailNow()
+	}
 }
 
-// TODO: Append recovery tests for the new ListHT structure
-func TestAVLTreeDifferentRecoveries(t *testing.T) {
+func TestAVLTreeHTDifferentRecoveries(t *testing.T) {
 	// Requesting the last matching index (i.e. n == nCmds) is mandatory
 	// on Immediately and Interval configurations.
 	nCmds, wrt, dif := uint64(2000), 50, 10
@@ -113,7 +119,7 @@ func TestAVLTreeDifferentRecoveries(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		t.Log("====Executing Test Case #", i)
+		t.Log("====Executing AVLTree Test Case #", i)
 
 		// Currently logs must be re-generated for each different config, which
 		// prohibits the generation of an unique log file for all configs. An
@@ -144,11 +150,100 @@ func TestAVLTreeDifferentRecoveries(t *testing.T) {
 			t.Log(log)
 			t.FailNow()
 		}
+
+		if len(redLog) == 0 {
+			t.Log("Both logs are empty")
+			t.Log(redLog)
+			t.Log(log)
+			t.FailNow()
+		}
 	}
 }
 
-// TODO: Append recovery tests for the new ListHT structure
-func TestAVLTreeRecovBytesInterpretation(t *testing.T) {
+func TestListHTDifferentRecoveries(t *testing.T) {
+	// Requesting the last matching index (i.e. n == nCmds) is mandatory
+	// on Immediately and Interval configurations.
+	nCmds, wrt, dif := uint64(2000), 50, 10
+	p, n := uint64(10), uint64(2000)
+	defAlg := GreedyLt
+
+	testCases := []LogConfig{
+		{ // immediately inmem
+			Alg:   defAlg,
+			Tick:  Immediately,
+			Inmem: true,
+		},
+		{ // delayed inmem
+			Alg:   defAlg,
+			Tick:  Delayed,
+			Inmem: true,
+		},
+		{ // interval inmem
+			Alg:    defAlg,
+			Tick:   Interval,
+			Period: 100,
+			Inmem:  true,
+		},
+		{ // immediately disk
+			Alg:   defAlg,
+			Tick:  Immediately,
+			Inmem: false,
+			Fname: "./logstate.out",
+		},
+		{ // delayed disk
+			Alg:   defAlg,
+			Tick:  Delayed,
+			Inmem: false,
+			Fname: "./logstate.out",
+		},
+		{ // interval disk
+			Alg:    defAlg,
+			Tick:   Interval,
+			Period: 100,
+			Inmem:  false,
+			Fname:  "./logstate.out",
+		},
+	}
+
+	for i, tc := range testCases {
+		t.Log("====Executing List Test Case #", i)
+
+		lt, err := generateRandListHT(nCmds, wrt, dif, &tc)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		// the compacted log used for later comparison
+		redLog, err := ApplyReduceAlgo(lt, defAlg, p, n)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		log, err := lt.Recov(p, n)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		if !logsAreEquivalent(redLog, log) {
+			t.Log("Logs are not equivalent")
+			t.Log(redLog)
+			t.Log(log)
+			t.FailNow()
+		}
+
+		if len(redLog) == 0 {
+			t.Log("Both logs are empty")
+			t.Log(redLog)
+			t.Log(log)
+			t.FailNow()
+		}
+	}
+}
+
+func TestAVLTreeHTRecovBytesInterpretation(t *testing.T) {
 	nCmds, wrt, dif := uint64(2000), 50, 100
 	p, n := uint64(100), uint64(1500)
 	defAlg := IterDFSAvl
@@ -168,7 +263,7 @@ func TestAVLTreeRecovBytesInterpretation(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		t.Log("====Executing Test Case #", i)
+		t.Log("====Executing AVLTree Test Case #", i)
 
 		avl, err := generateRandAVLTreeHT(nCmds, wrt, dif, &tc)
 		if err != nil {
@@ -201,32 +296,117 @@ func TestAVLTreeRecovBytesInterpretation(t *testing.T) {
 			t.Log(log)
 			t.FailNow()
 		}
+
+		if len(redLog) == 0 {
+			t.Log("Both logs are empty")
+			t.Log(redLog)
+			t.Log(log)
+			t.FailNow()
+		}
 	}
 }
 
-// TODO: Reimplement this procedure adapting for the new ListHT structure
-func generateRandList(n uint64, wrt, dif int) (*ListHT, error) {
+func TestListHTRecovBytesInterpretation(t *testing.T) {
+	nCmds, wrt, dif := uint64(2000), 50, 100
+	p, n := uint64(100), uint64(1500)
+	defAlg := GreedyLt
+
+	testCases := []LogConfig{
+		{ // inmem byte recov
+			Alg:   defAlg,
+			Tick:  Delayed,
+			Inmem: true,
+		},
+		{ // disk byte recov
+			Alg:   defAlg,
+			Tick:  Delayed,
+			Inmem: false,
+			Fname: "./logstate.out",
+		},
+	}
+
+	for i, tc := range testCases {
+		t.Log("====Executing List Test Case #", i)
+
+		lt, err := generateRandListHT(nCmds, wrt, dif, &tc)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		// the compacted log used for later comparison
+		redLog, err := ApplyReduceAlgo(lt, defAlg, p, n)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		raw, err := lt.RecovBytes(p, n)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		log, err := deserializeRawLog(raw)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		if !logsAreEquivalent(redLog, log) {
+			t.Log("Logs are not equivalent")
+			t.Log(redLog)
+			t.Log(log)
+			t.FailNow()
+		}
+
+		if len(redLog) == 0 {
+			t.Log("Both logs are empty")
+			t.Log(redLog)
+			t.Log(log)
+			t.FailNow()
+		}
+	}
+}
+
+func generateRandListHT(n uint64, wrt, dif int, cfg *LogConfig) (*ListHT, error) {
 	srand := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(srand)
-	l := NewListHT()
+	var lt *ListHT
+	var err error
+
+	if cfg == nil {
+		lt = NewListHT() // uses DefaultLogConfig underneath
+	} else {
+		lt, err = NewListHTWithConfig(cfg)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	for i := uint64(0); i < n; i++ {
-
+		var cmd pb.Command
 		if cn := r.Intn(100); cn < wrt {
-			cmd := pb.Command{
+			cmd = pb.Command{
+				Id:    i,
 				Key:   strconv.Itoa(r.Intn(dif)),
 				Value: strconv.Itoa(r.Int()),
 				Op:    pb.Command_SET,
 			}
 
-			// the list is represented on the oposite order
-			l.Log(n-1-i, cmd)
-
 		} else {
-			continue
+			// only SETS states are needed
+			cmd = pb.Command{
+				Id: i,
+				Op: pb.Command_GET,
+			}
+		}
+		err = lt.Log(i, cmd)
+		if err != nil {
+			return nil, err
 		}
 	}
-	return l, nil
+	return lt, nil
 }
 
 func generateRandAVLTreeHT(n uint64, wrt, dif int, cfg *LogConfig) (*AVLTreeHT, error) {

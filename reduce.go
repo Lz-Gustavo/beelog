@@ -86,7 +86,8 @@ func ApplyReduceAlgo(s Structure, r Reducer, p, n uint64) ([]pb.Command, error) 
 
 // BubblerList doesnt provide an optimal solution.
 //
-// NOTE: Deprecated for now, will be later removed when safe.
+// NOTE: The list must be represented on the oposite order. Deprecated for
+// now, will be later removed when convenient.
 func BubblerList(l *ListHT, p, n uint64) []pb.Command {
 	var (
 		rm bool
@@ -128,7 +129,8 @@ func BubblerList(l *ListHT, p, n uint64) []pb.Command {
 
 // OldGreedyList returns an optimal solution.
 //
-// NOTE: Deprecated for now, will be later removed when safe.
+// NOTE: The list must be represented on the oposite order. Deprecated for
+// now, will be later removed when convenient.
 func OldGreedyList(l *ListHT, p, n uint64) []pb.Command {
 	var (
 		rc   uint64
@@ -163,11 +165,33 @@ func OldGreedyList(l *ListHT, p, n uint64) []pb.Command {
 	return log
 }
 
-// GreedyList ...
+// GreedyList ... binary search, then linear greedy search on the state list
 func GreedyList(l *ListHT, p, n uint64) []pb.Command {
-	log := make([]pb.Command, 0)
-	// TODO: binary search, then linear greedy search on the state list
-	// transversal
+	log := []pb.Command{}
+	l.resetVisitedValues()
+	first := l.searchEntryNodeByIndex(p)
+
+	for i := first; i != nil; i = i.next {
+		ent := i.val.(*listEntry)
+
+		// reached the last index position
+		if ent.ind > n {
+			break
+		}
+		st := (*l.aux)[ent.key]
+
+		// current key state not yet satisfied in log
+		if !st.visited {
+			var phi pb.Command
+			for j := ent.ptr; j != nil && j.val.(*State).ind <= n; j = j.next {
+				phi = j.val.(*State).cmd
+			}
+
+			// append only the last update of a particular key
+			log = append(log, phi)
+			st.visited = true
+		}
+	}
 	return log
 }
 
