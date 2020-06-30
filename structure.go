@@ -152,7 +152,7 @@ func (ld *logData) retrieveRawLog(p, n uint64) ([]byte, error) {
 	return logs, nil
 }
 
-func (ld *logData) updateLogState(lg []pb.Command) error {
+func (ld *logData) updateLogState(lg []pb.Command, p, n uint64) error {
 	if ld.config.Inmem {
 		// update the most recent inmem log state
 		ld.recentLog = &lg
@@ -166,7 +166,7 @@ func (ld *logData) updateLogState(lg []pb.Command) error {
 	}
 	defer fd.Close()
 
-	err = MarshalLogIntoWriter(fd, &lg, ld.first, ld.last)
+	err = MarshalLogIntoWriter(fd, &lg, p, n)
 	if err != nil {
 		return err
 	}
@@ -335,7 +335,7 @@ func (l *ListHT) ReduceLog(p, n uint64) error {
 	if err != nil {
 		return err
 	}
-	return l.updateLogState(cmds)
+	return l.updateLogState(cmds, p, n)
 }
 
 // mayTriggerReduce ... unsafe ... must be called from mutual exclusion ...
@@ -563,7 +563,7 @@ func (av *AVLTreeHT) ReduceLog(p, n uint64) error {
 	if err != nil {
 		return err
 	}
-	return av.updateLogState(cmds)
+	return av.updateLogState(cmds, p, n)
 }
 
 // mayTriggerReduce ... unsafe ... must be called from mutual exclusion ...

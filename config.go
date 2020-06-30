@@ -6,13 +6,22 @@ import "errors"
 type ReduceInterval int8
 
 const (
-	// Immediately ...
+	// Immediately log reduce takes place after each insertion on the log
+	// structure. Not every 'Log()' call triggers an reduce, only those that
+	// result in a state change (e.g. write operations).
 	Immediately ReduceInterval = iota
 
-	// Delayed ...
+	// Delayed log reduce executes the configured reduce algorithm only during
+	// recovery, when a 'Recov()' call is invoked. This approach provides minimal
+	// overhead during application's execution, but can incur in a longer recovery
+	// on catastrophic fault scenarios (i.e. when all replicas fail together).
 	Delayed
 
-	// Interval ...
+	// Interval log reduce acts similar to a checkpoint procedure, triggering
+	// a reduce event after 'Period' commands. If a log interval is requested
+	// (i.e. through 'Recov()' calls), the last reduced state is informed. If
+	// no prior state is found (i.e. didnt reach 'Period' commands yet), a new
+	// one is immediately executed.
 	Interval
 )
 

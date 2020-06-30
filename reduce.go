@@ -10,22 +10,15 @@ import (
 type Reducer int8
 
 const (
-	// BubblerLt is similar to a bubble sort implementation, in the sense
-	// that command dependencies are identified on each iteration considering
-	// the result of the prior. Does not provided an optimal solution unlike
-	// the others.
-	// BubblerLt
-
-	// GreedyLt is a greedy approach of the first algorithm. On each iteration,
-	// the algorithm continues iterating over the list removing any prior
-	// occurence of writes on that particular key.
-	//
-	// TODO: modify greedy description
+	// GreedyLt implements a greedy search over LogList structures. After finding
+	// the node of the lower bound in the requested interval through a binary search,
+	// the algorithm continues iterating over the key update list until the requested
+	// upper bound is surpassed.
 	GreedyLt Reducer = iota
 
 	// GreedyAvl recursively implements a greedy search over LogAVL structures.
 	// On each iteration, the algorithm continues iterating over the key update
-	// list until the request upper bound is surpassed.
+	// list until the requested upper bound is surpassed.
 	GreedyAvl
 
 	// IterBFSAvl is an iterative version of GreedyAVL, adapted from the iterative
@@ -165,7 +158,8 @@ func OldGreedyList(l *ListHT, p, n uint64) []pb.Command {
 	return log
 }
 
-// GreedyList ... binary search, then linear greedy search on the state list
+// GreedyList implements a binary search, then a linear greedy search on top
+// of LogLists.
 func GreedyList(l *ListHT, p, n uint64) []pb.Command {
 	log := []pb.Command{}
 	l.resetVisitedValues()
