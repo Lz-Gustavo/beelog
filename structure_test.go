@@ -160,6 +160,8 @@ func TestAVLTreeHTDifferentRecoveries(t *testing.T) {
 	}
 }
 
+// NOTE: List tests intentionally implemented as diff procedures for modularity
+// purposes.
 func TestListHTDifferentRecoveries(t *testing.T) {
 	// Requesting the last matching index (i.e. n == nCmds) is mandatory
 	// on Immediately and Interval configurations.
@@ -306,6 +308,8 @@ func TestAVLTreeHTRecovBytesInterpretation(t *testing.T) {
 	}
 }
 
+// NOTE: List tests intentionally implemented as diff procedures for modularity
+// purposes.
 func TestListHTRecovBytesInterpretation(t *testing.T) {
 	nCmds, wrt, dif := uint64(2000), 50, 100
 	p, n := uint64(100), uint64(1500)

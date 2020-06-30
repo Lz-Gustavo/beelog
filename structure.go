@@ -112,7 +112,7 @@ type logData struct {
 	count       uint32        // used on Interval config
 }
 
-func (ld *logData) retrieveLog(p, n uint64) ([]pb.Command, error) {
+func (ld *logData) retrieveLog() ([]pb.Command, error) {
 	if ld.config.Inmem {
 		return *ld.recentLog, nil
 	}
@@ -130,7 +130,7 @@ func (ld *logData) retrieveRawLog(p, n uint64) ([]byte, error) {
 	var rd io.Reader
 	if ld.config.Inmem {
 		buff := bytes.NewBuffer(nil)
-		err := MarshalLogIntoWriter(buff, ld.recentLog, ld.first, ld.last)
+		err := MarshalLogIntoWriter(buff, ld.recentLog, p, n)
 		if err != nil {
 			return nil, err
 		}
@@ -311,7 +311,7 @@ func (l *ListHT) Recov(p, n uint64) ([]pb.Command, error) {
 	if err := l.mayExecuteLazyReduce(p, n); err != nil {
 		return nil, err
 	}
-	return l.retrieveLog(p, n)
+	return l.retrieveLog()
 }
 
 // RecovBytes ... returns an already serialized data, most efficient approach
@@ -539,7 +539,7 @@ func (av *AVLTreeHT) Recov(p, n uint64) ([]pb.Command, error) {
 	if err := av.mayExecuteLazyReduce(p, n); err != nil {
 		return nil, err
 	}
-	return av.retrieveLog(p, n)
+	return av.retrieveLog()
 }
 
 // RecovBytes ... returns an already serialized data, most efficient approach
