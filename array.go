@@ -35,12 +35,12 @@ func NewArrayHTWithConfig(cfg *LogConfig) (*ArrayHT, error) {
 	}
 
 	ht := make(stateTable, 0)
-
 	var sz uint32
 	if sz = cfg.Period; sz < 1000 {
 		sz = 1000
 	}
 	sl := make([]listEntry, 0, 2*sz)
+
 	return &ArrayHT{
 		logData: logData{config: cfg},
 		arr:     &sl,
@@ -151,8 +151,6 @@ func (ar *ArrayHT) RecovBytes(p, n uint64) ([]byte, error) {
 
 // ReduceLog ... is only launched on thread-safe routines ...
 func (ar *ArrayHT) ReduceLog(p, n uint64) error {
-
-	// TODO: re-design array algorithm
 	cmds, err := ApplyReduceAlgo(ar, ar.config.Alg, p, n)
 	if err != nil {
 		return err

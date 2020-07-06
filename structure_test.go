@@ -84,44 +84,37 @@ func TestStructuresLog(t *testing.T) {
 	}
 }
 
-func TestAVLTreeHTDifferentRecoveries(t *testing.T) {
+func TestStructuresDifferentRecoveries(t *testing.T) {
 	// Requesting the last matching index (i.e. n == nCmds) is mandatory
 	// on Immediately and Interval configurations.
 	nCmds, wrt, dif := uint64(2000), 50, 10
 	p, n := uint64(10), uint64(2000)
-	defAlg := IterDFSAvl
 
-	testCases := []LogConfig{
+	cfgs := []LogConfig{
 		{ // immediately inmem
-			Alg:   defAlg,
 			Tick:  Immediately,
 			Inmem: true,
 		},
 		{ // delayed inmem
-			Alg:   defAlg,
 			Tick:  Delayed,
 			Inmem: true,
 		},
 		{ // interval inmem
-			Alg:    defAlg,
 			Tick:   Interval,
 			Period: 100,
 			Inmem:  true,
 		},
 		{ // immediately disk
-			Alg:   defAlg,
 			Tick:  Immediately,
 			Inmem: false,
 			Fname: "./logstate.out",
 		},
 		{ // delayed disk
-			Alg:   defAlg,
 			Tick:  Delayed,
 			Inmem: false,
 			Fname: "./logstate.out",
 		},
 		{ // interval disk
-			Alg:    defAlg,
 			Tick:   Interval,
 			Period: 100,
 			Inmem:  false,
@@ -129,407 +122,214 @@ func TestAVLTreeHTDifferentRecoveries(t *testing.T) {
 		},
 	}
 
-	for i, tc := range testCases {
-		t.Log("====Executing AVLTree Test Case #", i)
+	testCases := []struct {
+		structID uint8
+		Alg      Reducer
+		configs  []LogConfig
+	}{
+		{
+			0, // list
+			GreedyLt,
+			cfgs,
+		},
+		{
+			1, // array
+			GreedyArray,
+			cfgs,
+		},
+		{
+			2, // avltree
+			IterDFSAvl,
+			cfgs,
+		},
+	}
 
-		// Currently logs must be re-generated for each different config, which
-		// prohibits the generation of an unique log file for all configs. An
-		// unique log is not needed on a unit test scenario, since the idea is
-		// not to compare these strategies, only tests its correctness.
-		avl, err := generateRandAVLTreeHT(nCmds, wrt, dif, &tc)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
+	for _, tc := range testCases {
+		for j, cf := range tc.configs {
+			var st Structure
+			var err error
 
-		// the compacted log used for later comparison
-		redLog, err := ApplyReduceAlgo(avl, defAlg, p, n)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
+			// set the current test case algorithm
+			cf.Alg = tc.Alg
 
-		log, err := avl.Recov(p, n)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
+			// Currently logs must be re-generated for each different config, which
+			// prohibits the generation of an unique log file for all configs. An
+			// unique log is not needed on a unit test scenario, since the idea is
+			// not to compare these strategies, only tests its correctness.
+			switch tc.structID {
+			case 0:
+				st, err = generateRandListHT(nCmds, wrt, dif, &cf)
+				if err != nil {
+					t.Log(err.Error())
+					t.FailNow()
+				}
+				t.Log("====Executing List Test Case #", j)
+				break
 
-		if !logsAreEquivalent(redLog, log) {
-			t.Log("Logs are not equivalent")
-			t.Log(redLog)
-			t.Log(log)
-			t.FailNow()
-		}
+			case 1:
+				st, err = generateRandArrayHT(nCmds, wrt, dif, &cf)
+				if err != nil {
+					t.Log(err.Error())
+					t.FailNow()
+				}
+				t.Log("====Executing Array Test Case #", j)
+				break
 
-		if len(redLog) == 0 {
-			t.Log("Both logs are empty")
-			t.Log(redLog)
-			t.Log(log)
-			t.FailNow()
+			case 2:
+				st, err = generateRandAVLTreeHT(nCmds, wrt, dif, &cf)
+				if err != nil {
+					t.Log(err.Error())
+					t.FailNow()
+				}
+				t.Log("====Executing AVLTree Test Case #", j)
+				break
+
+			default:
+				t.Logf("unknow structure '%d' provided", tc.structID)
+				t.FailNow()
+			}
+
+			// the compacted log used for later comparison
+			redLog, err := ApplyReduceAlgo(st, cf.Alg, p, n)
+			if err != nil {
+				t.Log(err.Error())
+				t.FailNow()
+			}
+
+			log, err := st.Recov(p, n)
+			if err != nil {
+				t.Log(err.Error())
+				t.FailNow()
+			}
+
+			if !logsAreEquivalent(redLog, log) {
+				t.Log("Logs are not equivalent")
+				t.Log(redLog)
+				t.Log(log)
+				t.FailNow()
+			}
+
+			if len(redLog) == 0 {
+				t.Log("Both logs are empty")
+				t.Log(redLog)
+				t.Log(log)
+				t.FailNow()
+			}
 		}
 	}
 }
 
-// NOTE: List tests intentionally implemented as diff procedures for modularity
-// purposes.
-func TestListHTDifferentRecoveries(t *testing.T) {
-	// Requesting the last matching index (i.e. n == nCmds) is mandatory
-	// on Immediately and Interval configurations.
-	nCmds, wrt, dif := uint64(2000), 50, 10
-	p, n := uint64(10), uint64(2000)
-	defAlg := GreedyLt
-
-	testCases := []LogConfig{
-		{ // immediately inmem
-			Alg:   defAlg,
-			Tick:  Immediately,
-			Inmem: true,
-		},
-		{ // delayed inmem
-			Alg:   defAlg,
-			Tick:  Delayed,
-			Inmem: true,
-		},
-		{ // interval inmem
-			Alg:    defAlg,
-			Tick:   Interval,
-			Period: 100,
-			Inmem:  true,
-		},
-		{ // immediately disk
-			Alg:   defAlg,
-			Tick:  Immediately,
-			Inmem: false,
-			Fname: "./logstate.out",
-		},
-		{ // delayed disk
-			Alg:   defAlg,
-			Tick:  Delayed,
-			Inmem: false,
-			Fname: "./logstate.out",
-		},
-		{ // interval disk
-			Alg:    defAlg,
-			Tick:   Interval,
-			Period: 100,
-			Inmem:  false,
-			Fname:  "./logstate.out",
-		},
-	}
-
-	for i, tc := range testCases {
-		t.Log("====Executing List Test Case #", i)
-
-		lt, err := generateRandListHT(nCmds, wrt, dif, &tc)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
-
-		// the compacted log used for later comparison
-		redLog, err := ApplyReduceAlgo(lt, defAlg, p, n)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
-
-		log, err := lt.Recov(p, n)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
-
-		if !logsAreEquivalent(redLog, log) {
-			t.Log("Logs are not equivalent")
-			t.Log(redLog)
-			t.Log(log)
-			t.FailNow()
-		}
-
-		if len(redLog) == 0 {
-			t.Log("Both logs are empty")
-			t.Log(redLog)
-			t.Log(log)
-			t.FailNow()
-		}
-	}
-}
-
-// NOTE: Array tests intentionally implemented as diff procedures for modularity
-// purposes.
-func TestArrayHTDifferentRecoveries(t *testing.T) {
-	// Requesting the last matching index (i.e. n == nCmds) is mandatory
-	// on Immediately and Interval configurations.
-	nCmds, wrt, dif := uint64(2000), 50, 10
-	p, n := uint64(10), uint64(2000)
-	defAlg := GreedyArray
-
-	testCases := []LogConfig{
-		{ // immediately inmem
-			Alg:   defAlg,
-			Tick:  Immediately,
-			Inmem: true,
-		},
-		{ // delayed inmem
-			Alg:   defAlg,
-			Tick:  Delayed,
-			Inmem: true,
-		},
-		{ // interval inmem
-			Alg:    defAlg,
-			Tick:   Interval,
-			Period: 100,
-			Inmem:  true,
-		},
-		{ // immediately disk
-			Alg:   defAlg,
-			Tick:  Immediately,
-			Inmem: false,
-			Fname: "./logstate.out",
-		},
-		{ // delayed disk
-			Alg:   defAlg,
-			Tick:  Delayed,
-			Inmem: false,
-			Fname: "./logstate.out",
-		},
-		{ // interval disk
-			Alg:    defAlg,
-			Tick:   Interval,
-			Period: 100,
-			Inmem:  false,
-			Fname:  "./logstate.out",
-		},
-	}
-
-	for i, tc := range testCases {
-		t.Log("====Executing Array Test Case #", i)
-
-		lt, err := generateRandArrayHT(nCmds, wrt, dif, &tc)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
-
-		// the compacted log used for later comparison
-		redLog, err := ApplyReduceAlgo(lt, defAlg, p, n)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
-
-		log, err := lt.Recov(p, n)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
-
-		if !logsAreEquivalent(redLog, log) {
-			t.Log("Logs are not equivalent")
-			t.Log(redLog)
-			t.Log(log)
-			t.FailNow()
-		}
-
-		if len(redLog) == 0 {
-			t.Log("Both logs are empty")
-			t.Log(redLog)
-			t.Log(log)
-			t.FailNow()
-		}
-	}
-}
-
-func TestAVLTreeHTRecovBytesInterpretation(t *testing.T) {
+func TestStructuresRecovBytesInterpretation(t *testing.T) {
 	nCmds, wrt, dif := uint64(2000), 50, 100
 	p, n := uint64(100), uint64(1500)
-	defAlg := IterDFSAvl
 
-	testCases := []LogConfig{
+	cfgs := []LogConfig{
 		{ // inmem byte recov
-			Alg:   defAlg,
 			Tick:  Delayed,
 			Inmem: true,
 		},
 		{ // disk byte recov
-			Alg:   defAlg,
 			Tick:  Delayed,
 			Inmem: false,
 			Fname: "./logstate.out",
 		},
 	}
 
-	for i, tc := range testCases {
-		t.Log("====Executing AVLTree Test Case #", i)
-
-		avl, err := generateRandAVLTreeHT(nCmds, wrt, dif, &tc)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
-
-		// the compacted log used for later comparison
-		redLog, err := ApplyReduceAlgo(avl, defAlg, p, n)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
-
-		raw, err := avl.RecovBytes(p, n)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
-
-		log, err := deserializeRawLog(raw)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
-
-		if !logsAreEquivalent(redLog, log) {
-			t.Log("Logs are not equivalent")
-			t.Log(redLog)
-			t.Log(log)
-			t.FailNow()
-		}
-
-		if len(redLog) == 0 {
-			t.Log("Both logs are empty")
-			t.Log(redLog)
-			t.Log(log)
-			t.FailNow()
-		}
-	}
-}
-
-// NOTE: List tests intentionally implemented as diff procedures for modularity
-// purposes.
-func TestListHTRecovBytesInterpretation(t *testing.T) {
-	nCmds, wrt, dif := uint64(2000), 50, 100
-	p, n := uint64(100), uint64(1500)
-	defAlg := GreedyLt
-
-	testCases := []LogConfig{
-		{ // inmem byte recov
-			Alg:   defAlg,
-			Tick:  Delayed,
-			Inmem: true,
+	testCases := []struct {
+		structID uint8
+		Alg      Reducer
+		configs  []LogConfig
+	}{
+		{
+			0, // list
+			GreedyLt,
+			cfgs,
 		},
-		{ // disk byte recov
-			Alg:   defAlg,
-			Tick:  Delayed,
-			Inmem: false,
-			Fname: "./logstate.out",
+		{
+			1, // array
+			GreedyArray,
+			cfgs,
+		},
+		{
+			2, // avltree
+			IterDFSAvl,
+			cfgs,
 		},
 	}
 
-	for i, tc := range testCases {
-		t.Log("====Executing List Test Case #", i)
+	for _, tc := range testCases {
+		for j, cf := range tc.configs {
+			var st Structure
+			var err error
 
-		lt, err := generateRandListHT(nCmds, wrt, dif, &tc)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
+			// set the current test case algorithm
+			cf.Alg = tc.Alg
 
-		// the compacted log used for later comparison
-		redLog, err := ApplyReduceAlgo(lt, defAlg, p, n)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
+			switch tc.structID {
+			case 0:
+				st, err = generateRandListHT(nCmds, wrt, dif, &cf)
+				if err != nil {
+					t.Log(err.Error())
+					t.FailNow()
+				}
+				t.Log("====Executing List Test Case #", j)
+				break
 
-		raw, err := lt.RecovBytes(p, n)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
+			case 1:
+				st, err = generateRandArrayHT(nCmds, wrt, dif, &cf)
+				if err != nil {
+					t.Log(err.Error())
+					t.FailNow()
+				}
+				t.Log("====Executing Array Test Case #", j)
+				break
 
-		log, err := deserializeRawLog(raw)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
+			case 2:
+				st, err = generateRandAVLTreeHT(nCmds, wrt, dif, &cf)
+				if err != nil {
+					t.Log(err.Error())
+					t.FailNow()
+				}
+				t.Log("====Executing AVLTree Test Case #", j)
+				break
 
-		if !logsAreEquivalent(redLog, log) {
-			t.Log("Logs are not equivalent")
-			t.Log(redLog)
-			t.Log(log)
-			t.FailNow()
-		}
+			default:
+				t.Logf("unknow structure '%d' provided", tc.structID)
+				t.FailNow()
+			}
 
-		if len(redLog) == 0 {
-			t.Log("Both logs are empty")
-			t.Log(redLog)
-			t.Log(log)
-			t.FailNow()
-		}
-	}
-}
+			// the compacted log used for later comparison
+			redLog, err := ApplyReduceAlgo(st, cf.Alg, p, n)
+			if err != nil {
+				t.Log(err.Error())
+				t.FailNow()
+			}
 
-// NOTE: Array tests intentionally implemented as diff procedures for modularity
-// purposes.
-func TestArrayHTRecovBytesInterpretation(t *testing.T) {
-	nCmds, wrt, dif := uint64(2000), 50, 100
-	p, n := uint64(100), uint64(1500)
-	defAlg := GreedyArray
+			raw, err := st.RecovBytes(p, n)
+			if err != nil {
+				t.Log(err.Error())
+				t.FailNow()
+			}
 
-	testCases := []LogConfig{
-		{ // inmem byte recov
-			Alg:   defAlg,
-			Tick:  Delayed,
-			Inmem: true,
-		},
-		{ // disk byte recov
-			Alg:   defAlg,
-			Tick:  Delayed,
-			Inmem: false,
-			Fname: "./logstate.out",
-		},
-	}
+			log, err := deserializeRawLog(raw)
+			if err != nil {
+				t.Log(err.Error())
+				t.FailNow()
+			}
 
-	for i, tc := range testCases {
-		t.Log("====Executing Array Test Case #", i)
+			if !logsAreEquivalent(redLog, log) {
+				t.Log("Logs are not equivalent")
+				t.Log(redLog)
+				t.Log(log)
+				t.FailNow()
+			}
 
-		lt, err := generateRandArrayHT(nCmds, wrt, dif, &tc)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
-
-		// the compacted log used for later comparison
-		redLog, err := ApplyReduceAlgo(lt, defAlg, p, n)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
-
-		raw, err := lt.RecovBytes(p, n)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
-
-		log, err := deserializeRawLog(raw)
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
-
-		if !logsAreEquivalent(redLog, log) {
-			t.Log("Logs are not equivalent")
-			t.Log(redLog)
-			t.Log(log)
-			t.FailNow()
-		}
-
-		if len(redLog) == 0 {
-			t.Log("Both logs are empty")
-			t.Log(redLog)
-			t.Log(log)
-			t.FailNow()
+			if len(redLog) == 0 {
+				t.Log("Both logs are empty")
+				t.Log(redLog)
+				t.Log(log)
+				t.FailNow()
+			}
 		}
 	}
 }
