@@ -205,9 +205,33 @@ func GreedyListHT(l *ListHT, p, n uint64) []pb.Command {
 
 // GreedyArrayHT implements a binary search, then a linear greedy search on top
 // of an 'array-backed' structure.
-func GreedyArrayHT(l *ArrayHT, p, n uint64) []pb.Command {
-	// TODO:
-	return nil
+func GreedyArrayHT(ar *ArrayHT, p, n uint64) []pb.Command {
+	log := []pb.Command{}
+	ar.resetVisitedValues()
+	first := ar.searchEntryPosByIndex(p)
+
+	for i := first; i < ar.Len(); i++ {
+		ent := (*ar.arr)[i]
+
+		// reached the last index position
+		if ent.ind > n {
+			break
+		}
+		st := (*ar.aux)[ent.key]
+
+		// current key state not yet satisfied in log
+		if !st.visited {
+			var phi pb.Command
+			for j := ent.ptr; j != nil && j.val.(*State).ind <= n; j = j.next {
+				phi = j.val.(*State).cmd
+			}
+
+			// append only the last update of a particular key
+			log = append(log, phi)
+			st.visited = true
+		}
+	}
+	return log
 }
 
 // GreedyAVLTreeHT implements a recursive search on top of LogAVL structs.

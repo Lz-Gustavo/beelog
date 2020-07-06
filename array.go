@@ -13,7 +13,6 @@ import (
 type ArrayHT struct {
 	arr *[]listEntry
 	aux *stateTable
-	len uint64
 	mu  sync.RWMutex
 	logData
 }
@@ -63,7 +62,7 @@ func (ar *ArrayHT) Str() string {
 
 // Len returns the list length.
 func (ar *ArrayHT) Len() uint64 {
-	return ar.len
+	return uint64(len(*ar.arr))
 }
 
 // Log records the occurence of command 'cmd' on the provided index. Writes are as
@@ -103,7 +102,7 @@ func (ar *ArrayHT) Log(index uint64, cmd pb.Command) error {
 	entry.ptr = lNode
 
 	// adjust first structure index
-	if ar.len == 0 {
+	if ar.Len() == 0 {
 		ar.first = entry.ind
 	}
 
@@ -193,9 +192,27 @@ func (ar *ArrayHT) mayExecuteLazyReduce(p, n uint64) error {
 	return nil
 }
 
+// TODO: later improve with an initial guess near 'ind' pos
 func (ar *ArrayHT) searchEntryPosByIndex(ind uint64) uint64 {
-	// TODO: implement binary search
-	return 0
+	start := int64(0)
+	last := int64(ar.Len()) - 1
+	var mid int64
+
+	for last > start {
+		mid = start + (last-start)/2
+		ent := (*ar.arr)[mid]
+
+		if ent.ind == ind {
+			return uint64(mid)
+
+		} else if ind > ent.ind { // greater
+			start = mid + 1
+
+		} else { // less
+			last = mid - 1
+		}
+	}
+	return uint64(mid)
 }
 
 func (ar *ArrayHT) resetVisitedValues() {

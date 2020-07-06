@@ -59,6 +59,52 @@ func TestListAlgos(t *testing.T) {
 	}
 }
 
+func TestArrayAlgos(t *testing.T) {
+	debugOutput := false
+	testCases := []struct {
+		nCmds    uint64
+		pWrts    int
+		diffKeys int
+		alg      Reducer
+	}{
+		{
+			20,
+			100,
+			5,
+			GreedyArray,
+		},
+		{
+			2000,
+			90,
+			1000,
+			GreedyArray,
+		},
+	}
+
+	for i, tc := range testCases {
+		l, err := generateRandArrayHT(tc.nCmds, tc.pWrts, tc.diffKeys, nil)
+		if err != nil {
+			t.Log("test num", i, "failed with err:", err.Error())
+			t.FailNow()
+		}
+
+		if debugOutput {
+			t.Log("Init with", l.Len(), "commands:\n", l.Str())
+		}
+
+		log, err := ApplyReduceAlgo(l, tc.alg, 0, l.Len())
+		if err != nil {
+			t.Log("test num", i, "failed with err:", err.Error())
+			t.FailNow()
+		}
+
+		t.Log("Removed commands:", l.Len()-uint64(len(log)))
+		if debugOutput {
+			t.Log("Reduced Log:\n", log)
+		}
+	}
+}
+
 func TestAVLTreeAlgos(t *testing.T) {
 	testCases := []struct {
 		numCmds      uint64

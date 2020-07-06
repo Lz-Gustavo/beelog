@@ -21,8 +21,9 @@ func TestStructuresLog(t *testing.T) {
 	n := uint64(1000)
 	avl := NewAVLTreeHT()
 	lt := NewListHT()
+	arr := NewArrayHT()
 
-	for _, st := range []Structure{avl, lt} {
+	for _, st := range []Structure{avl, lt, arr} {
 		// populate some SET commands
 		for i := first; i < n; i++ {
 			// TODO: yeah, I will change this API of index log in time
@@ -69,6 +70,16 @@ func TestStructuresLog(t *testing.T) {
 	}
 	if lt.last != n {
 		t.Log("last cmd index is", lt.last, ", expected", n)
+		t.FailNow()
+	}
+
+	// same as array
+	if arr.first != first {
+		t.Log("first cmd index is", arr.first, ", expected", first)
+		t.FailNow()
+	}
+	if arr.last != n {
+		t.Log("last cmd index is", arr.last, ", expected", n)
 		t.FailNow()
 	}
 }
@@ -245,6 +256,91 @@ func TestListHTDifferentRecoveries(t *testing.T) {
 	}
 }
 
+// NOTE: Array tests intentionally implemented as diff procedures for modularity
+// purposes.
+func TestArrayHTDifferentRecoveries(t *testing.T) {
+	// Requesting the last matching index (i.e. n == nCmds) is mandatory
+	// on Immediately and Interval configurations.
+	nCmds, wrt, dif := uint64(2000), 50, 10
+	p, n := uint64(10), uint64(2000)
+	defAlg := GreedyArray
+
+	testCases := []LogConfig{
+		{ // immediately inmem
+			Alg:   defAlg,
+			Tick:  Immediately,
+			Inmem: true,
+		},
+		{ // delayed inmem
+			Alg:   defAlg,
+			Tick:  Delayed,
+			Inmem: true,
+		},
+		{ // interval inmem
+			Alg:    defAlg,
+			Tick:   Interval,
+			Period: 100,
+			Inmem:  true,
+		},
+		{ // immediately disk
+			Alg:   defAlg,
+			Tick:  Immediately,
+			Inmem: false,
+			Fname: "./logstate.out",
+		},
+		{ // delayed disk
+			Alg:   defAlg,
+			Tick:  Delayed,
+			Inmem: false,
+			Fname: "./logstate.out",
+		},
+		{ // interval disk
+			Alg:    defAlg,
+			Tick:   Interval,
+			Period: 100,
+			Inmem:  false,
+			Fname:  "./logstate.out",
+		},
+	}
+
+	for i, tc := range testCases {
+		t.Log("====Executing Array Test Case #", i)
+
+		lt, err := generateRandArrayHT(nCmds, wrt, dif, &tc)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		// the compacted log used for later comparison
+		redLog, err := ApplyReduceAlgo(lt, defAlg, p, n)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		log, err := lt.Recov(p, n)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		if !logsAreEquivalent(redLog, log) {
+			t.Log("Logs are not equivalent")
+			t.Log(redLog)
+			t.Log(log)
+			t.FailNow()
+		}
+
+		if len(redLog) == 0 {
+			t.Log("Both logs are empty")
+			t.Log(redLog)
+			t.Log(log)
+			t.FailNow()
+		}
+	}
+}
+
 func TestAVLTreeHTRecovBytesInterpretation(t *testing.T) {
 	nCmds, wrt, dif := uint64(2000), 50, 100
 	p, n := uint64(100), uint64(1500)
@@ -373,6 +469,71 @@ func TestListHTRecovBytesInterpretation(t *testing.T) {
 	}
 }
 
+// NOTE: Array tests intentionally implemented as diff procedures for modularity
+// purposes.
+func TestArrayHTRecovBytesInterpretation(t *testing.T) {
+	nCmds, wrt, dif := uint64(2000), 50, 100
+	p, n := uint64(100), uint64(1500)
+	defAlg := GreedyArray
+
+	testCases := []LogConfig{
+		{ // inmem byte recov
+			Alg:   defAlg,
+			Tick:  Delayed,
+			Inmem: true,
+		},
+		{ // disk byte recov
+			Alg:   defAlg,
+			Tick:  Delayed,
+			Inmem: false,
+			Fname: "./logstate.out",
+		},
+	}
+
+	for i, tc := range testCases {
+		t.Log("====Executing Array Test Case #", i)
+
+		lt, err := generateRandArrayHT(nCmds, wrt, dif, &tc)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		// the compacted log used for later comparison
+		redLog, err := ApplyReduceAlgo(lt, defAlg, p, n)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		raw, err := lt.RecovBytes(p, n)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		log, err := deserializeRawLog(raw)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		if !logsAreEquivalent(redLog, log) {
+			t.Log("Logs are not equivalent")
+			t.Log(redLog)
+			t.Log(log)
+			t.FailNow()
+		}
+
+		if len(redLog) == 0 {
+			t.Log("Both logs are empty")
+			t.Log(redLog)
+			t.Log(log)
+			t.FailNow()
+		}
+	}
+}
+
 func generateRandListHT(n uint64, wrt, dif int, cfg *LogConfig) (*ListHT, error) {
 	srand := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(srand)
@@ -411,6 +572,46 @@ func generateRandListHT(n uint64, wrt, dif int, cfg *LogConfig) (*ListHT, error)
 		}
 	}
 	return lt, nil
+}
+
+func generateRandArrayHT(n uint64, wrt, dif int, cfg *LogConfig) (*ArrayHT, error) {
+	srand := rand.NewSource(time.Now().UnixNano())
+	r := rand.New(srand)
+	var arr *ArrayHT
+	var err error
+
+	if cfg == nil {
+		arr = NewArrayHT() // uses DefaultLogConfig underneath
+	} else {
+		arr, err = NewArrayHTWithConfig(cfg)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	for i := uint64(0); i < n; i++ {
+		var cmd pb.Command
+		if cn := r.Intn(100); cn < wrt {
+			cmd = pb.Command{
+				Id:    i,
+				Key:   strconv.Itoa(r.Intn(dif)),
+				Value: strconv.Itoa(r.Int()),
+				Op:    pb.Command_SET,
+			}
+
+		} else {
+			// only SETS states are needed
+			cmd = pb.Command{
+				Id: i,
+				Op: pb.Command_GET,
+			}
+		}
+		err = arr.Log(i, cmd)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return arr, nil
 }
 
 func generateRandAVLTreeHT(n uint64, wrt, dif int, cfg *LogConfig) (*AVLTreeHT, error) {
