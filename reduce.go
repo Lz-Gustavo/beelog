@@ -16,6 +16,9 @@ const (
 	// upper bound is surpassed.
 	GreedyLt Reducer = iota
 
+	// GreedyArray ...
+	GreedyArray
+
 	// GreedyAvl recursively implements a greedy search over LogAVL structures.
 	// On each iteration, the algorithm continues iterating over the key update
 	// list until the requested upper bound is surpassed.
@@ -56,18 +59,29 @@ func ApplyReduceAlgo(s Structure, r Reducer, p, n uint64) ([]pb.Command, error) 
 			break
 
 		default:
-			return nil, errors.New("unsupported reduce algorithm")
+			return nil, errors.New("unsupported reduce algorithm for an AVLTreeHT structure")
 		}
 		break
 
 	case *ListHT:
 		switch r {
 		case GreedyLt:
-			log = GreedyList(st, p, n)
+			log = GreedyListHT(st, p, n)
 			break
 
 		default:
-			return nil, errors.New("unsupported reduce algorithm")
+			return nil, errors.New("unsupported reduce algorithm for a ListHT structure")
+		}
+		break
+
+	case *ArrayHT:
+		switch r {
+		case GreedyArray:
+			log = GreedyArrayHT(st, p, n)
+			break
+
+		default:
+			return nil, errors.New("unsupported reduce algorithm for an ArrayHT structure")
 		}
 		break
 
@@ -158,9 +172,9 @@ func OldGreedyList(l *ListHT, p, n uint64) []pb.Command {
 	return log
 }
 
-// GreedyList implements a binary search, then a linear greedy search on top
+// GreedyListHT implements a binary search, then a linear greedy search on top
 // of LogLists.
-func GreedyList(l *ListHT, p, n uint64) []pb.Command {
+func GreedyListHT(l *ListHT, p, n uint64) []pb.Command {
 	log := []pb.Command{}
 	l.resetVisitedValues()
 	first := l.searchEntryNodeByIndex(p)
@@ -187,6 +201,13 @@ func GreedyList(l *ListHT, p, n uint64) []pb.Command {
 		}
 	}
 	return log
+}
+
+// GreedyArrayHT implements a binary search, then a linear greedy search on top
+// of an 'array-backed' structure.
+func GreedyArrayHT(l *ArrayHT, p, n uint64) []pb.Command {
+	// TODO:
+	return nil
 }
 
 // GreedyAVLTreeHT implements a recursive search on top of LogAVL structs.
