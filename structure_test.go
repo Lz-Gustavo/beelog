@@ -454,6 +454,11 @@ func generateRandAVLTreeHT(n uint64, wrt, dif int, cfg *LogConfig) (*AVLTreeHT, 
 	return avl, nil
 }
 
+func generateRandCircBuffHT(n uint64, wrt, dif int, cfg *LogConfig) (*AVLTreeHT, error) {
+	// TODO: ...
+	return nil, nil
+}
+
 // deserializeRawLog emulates the same procedure implemented by a recoverying
 // replica, interpreting the serialized log received from any byte stream.
 func deserializeRawLog(log []byte) ([]pb.Command, error) {

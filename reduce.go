@@ -31,6 +31,9 @@ const (
 	// IterDFSAvl is a small variation of IterBFSAvl, simply replacing FIFO for
 	// LIFO semantics. The stack is implemented as an underlying slice.
 	IterDFSAvl
+
+	// IterCircBuff ...
+	IterCircBuff
 )
 
 // ApplyReduceAlgo executes over a Structure the choosen Reducer algorithm, returning
@@ -84,6 +87,9 @@ func ApplyReduceAlgo(s Structure, r Reducer, p, n uint64) ([]pb.Command, error) 
 			return nil, errors.New("unsupported reduce algorithm for an ArrayHT structure")
 		}
 		break
+
+	case *CircBuffHT:
+		return nil, errors.New("CircBuffHT structure utilizes a different procedure, check 'cb.ExecuteReduceAlg' implementation")
 
 	default:
 		return nil, errors.New("unsupported log datastructure")
@@ -334,4 +340,10 @@ func IterDFSAVLTreeHT(avl *AVLTreeHT, p, n uint64) []pb.Command {
 		}
 	}
 	return log
+}
+
+// IterCircBuffHT executes on top of a local copy of the log structure ...
+func IterCircBuffHT(copy []buffEntry, p, n uint64) []pb.Command {
+	// TODO:
+	return nil
 }

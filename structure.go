@@ -267,3 +267,10 @@ func MarshalLogIntoWriter(logWr io.Writer, log *[]pb.Command, p, n uint64) error
 	}
 	return nil
 }
+
+// UpdateLogIndexesInWriter ...
+func UpdateLogIndexesInWriter(logWr io.Writer, p, n uint64) error {
+	// TODO: update indexes without having to unmarshal and marshal again the
+	// entire byte sequence
+	return nil
+}
