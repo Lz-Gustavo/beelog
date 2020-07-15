@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	defaultCap = 2000
+	defaultCap = 4000
 )
 
 // buffEntry (ies) are equivalent to list entries without any "shortcut" ptr
@@ -108,9 +108,11 @@ func (cb *CircBuffHT) Log(index uint64, cmd pb.Command) error {
 		}
 
 		// update current state for that particular key
-		st := (*cb.aux)[cmd.Key]
-		st.ind = index
-		st.cmd = cmd
+		st := State{
+			ind: index,
+			cmd: cmd,
+		}
+		(*cb.aux)[cmd.Key] = st
 
 		// adjust first structure index
 		if cb.Len() == 0 {
@@ -174,16 +176,23 @@ func (cb *CircBuffHT) RecovBytes(p, n uint64) ([]byte, error) {
 	return cb.retrieveRawLog(f, l)
 }
 
-// ReduceLog ... is only launched on thread-safe routines ...
+// ReduceLog applies the configured algorithm on a concurrent-safe copy and
+// updates the lates log state.
+//
+// TODO: maybe implement mutual exclusion during state update using a different
+// lock.
 func (cb *CircBuffHT) ReduceLog(cp []State, first, last uint64) error {
-	cmds, err := cb.ExecuteReduceAlg(cp, first, last)
+	cmds, err := cb.ExecuteReduceAlgOnCopy(cp)
 	if err != nil {
 		return err
 	}
 	return cb.updateLogState(cmds, first, last)
 }
 
-// mayTriggerReduce ... unsafe ... must be called from mutual exclusion ...
+// mayTriggerReduce possibly triggers the reduce algorithm based on config params
+// (e.g. interval period reached) or when the buffer capacity is surprassed on next
+// insertion. The circular buffer variant operates over a copy, so it's safe to be
+// called concurrently.
 func (cb *CircBuffHT) mayTriggerReduce(cp []State, first, last uint64) error {
 	// cap surprassing on next insertion
 	if cb.len == cb.cap {
@@ -232,6 +241,9 @@ func (cb *CircBuffHT) resetBuffState() {
 
 // createStateCopy returns a local view of the buffer structure and indexes metadata. Must
 // be called from mutual exclusion scope.
+//
+// TODO: investigate trade-offs between copying an array of states or the buffer array and
+// the auxiliar hash table.
 func (cb *CircBuffHT) createStateCopy() ([]State, uint64, uint64) {
 	buff := []State{}
 	i := 0
@@ -246,8 +258,8 @@ func (cb *CircBuffHT) createStateCopy() ([]State, uint64, uint64) {
 	return buff, cb.first, cb.last
 }
 
-// ExecuteReduceAlg launches the config algorithm on a conflict-free copy.
-func (cb *CircBuffHT) ExecuteReduceAlg(cp []State, p, n uint64) ([]pb.Command, error) {
+// ExecuteReduceAlgOnCopy applies the configured reduce algorithm on a conflict-free copy.
+func (cb *CircBuffHT) ExecuteReduceAlgOnCopy(cp []State) ([]pb.Command, error) {
 	switch cb.config.Alg {
 	case IterCircBuff:
 		return IterCircBuffHT(cp), nil

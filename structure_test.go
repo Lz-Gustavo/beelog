@@ -154,7 +154,13 @@ func TestStructuresDifferentRecoveries(t *testing.T) {
 			IterDFSAvl,
 			cfgs,
 		},
+		{
+			3, // circbuff
+			IterCircBuff,
+			cfgs,
+		},
 	}
+	structNames := []string{"List", "Array", "AVLTree", "CircBuff"}
 
 	for _, tc := range testCases {
 		for j, cf := range tc.configs {
@@ -168,38 +174,12 @@ func TestStructuresDifferentRecoveries(t *testing.T) {
 			// prohibits the generation of an unique log file for all configs. An
 			// unique log is not needed on a unit test scenario, since the idea is
 			// not to compare these strategies, only tests its correctness.
-			switch tc.structID {
-			case 0:
-				st, err = generateRandListHT(nCmds, wrt, dif, &cf)
-				if err != nil {
-					t.Log(err.Error())
-					t.FailNow()
-				}
-				t.Log("====Executing List Test Case #", j)
-				break
-
-			case 1:
-				st, err = generateRandArrayHT(nCmds, wrt, dif, &cf)
-				if err != nil {
-					t.Log(err.Error())
-					t.FailNow()
-				}
-				t.Log("====Executing Array Test Case #", j)
-				break
-
-			case 2:
-				st, err = generateRandAVLTreeHT(nCmds, wrt, dif, &cf)
-				if err != nil {
-					t.Log(err.Error())
-					t.FailNow()
-				}
-				t.Log("====Executing AVLTree Test Case #", j)
-				break
-
-			default:
-				t.Logf("unknow structure '%d' provided", tc.structID)
+			st, err = generateRandStructure(tc.structID, nCmds, wrt, dif, &cf)
+			if err != nil {
+				t.Log(err.Error())
 				t.FailNow()
 			}
+			t.Log("====Executing", structNames[tc.structID], "Test Case #", j)
 
 			// the compacted log used for later comparison
 			redLog, err := ApplyReduceAlgo(st, cf.Alg, p, n)
@@ -267,7 +247,13 @@ func TestStructuresRecovBytesInterpretation(t *testing.T) {
 			IterDFSAvl,
 			cfgs,
 		},
+		{
+			3, // circbuff
+			IterCircBuff,
+			cfgs,
+		},
 	}
+	structNames := []string{"List", "Array", "AVLTree", "CircBuff"}
 
 	for _, tc := range testCases {
 		for j, cf := range tc.configs {
@@ -277,38 +263,12 @@ func TestStructuresRecovBytesInterpretation(t *testing.T) {
 			// set the current test case algorithm
 			cf.Alg = tc.Alg
 
-			switch tc.structID {
-			case 0:
-				st, err = generateRandListHT(nCmds, wrt, dif, &cf)
-				if err != nil {
-					t.Log(err.Error())
-					t.FailNow()
-				}
-				t.Log("====Executing List Test Case #", j)
-				break
-
-			case 1:
-				st, err = generateRandArrayHT(nCmds, wrt, dif, &cf)
-				if err != nil {
-					t.Log(err.Error())
-					t.FailNow()
-				}
-				t.Log("====Executing Array Test Case #", j)
-				break
-
-			case 2:
-				st, err = generateRandAVLTreeHT(nCmds, wrt, dif, &cf)
-				if err != nil {
-					t.Log(err.Error())
-					t.FailNow()
-				}
-				t.Log("====Executing AVLTree Test Case #", j)
-				break
-
-			default:
-				t.Logf("unknow structure '%d' provided", tc.structID)
+			st, err = generateRandStructure(tc.structID, nCmds, wrt, dif, &cf)
+			if err != nil {
+				t.Log(err.Error())
 				t.FailNow()
 			}
+			t.Log("====Executing", structNames[tc.structID], "Test Case #", j)
 
 			// the compacted log used for later comparison
 			redLog, err := ApplyReduceAlgo(st, cf.Alg, p, n)
@@ -346,19 +306,59 @@ func TestStructuresRecovBytesInterpretation(t *testing.T) {
 	}
 }
 
-func generateRandListHT(n uint64, wrt, dif int, cfg *LogConfig) (*ListHT, error) {
+func generateRandStructure(id uint8, n uint64, wrt, dif int, cfg *LogConfig) (Structure, error) {
 	srand := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(srand)
-	var lt *ListHT
+	var st Structure
 	var err error
 
-	if cfg == nil {
-		lt = NewListHT() // uses DefaultLogConfig underneath
-	} else {
-		lt, err = NewListHTWithConfig(cfg)
-		if err != nil {
-			return nil, err
+	switch id {
+	case 0: // list
+		if cfg == nil {
+			st = NewListHT() // uses DefaultLogConfig underneath
+		} else {
+			st, err = NewListHTWithConfig(cfg)
+			if err != nil {
+				return nil, err
+			}
 		}
+		break
+
+	case 1: // array
+		if cfg == nil {
+			st = NewArrayHT()
+		} else {
+			st, err = NewArrayHTWithConfig(cfg)
+			if err != nil {
+				return nil, err
+			}
+		}
+		break
+
+	case 2: // avl
+		if cfg == nil {
+			st = NewAVLTreeHT()
+		} else {
+			st, err = NewAVLTreeHTWithConfig(cfg)
+			if err != nil {
+				return nil, err
+			}
+		}
+		break
+
+	case 3: // circbuff
+		if cfg == nil {
+			st = NewCircBuffHT()
+		} else {
+			st, err = NewCircBuffHTWithConfig(cfg, int(n))
+			if err != nil {
+				return nil, err
+			}
+		}
+		break
+
+	default:
+		return nil, fmt.Errorf("unknow structure '%d' provided", id)
 	}
 
 	for i := uint64(0); i < n; i++ {
@@ -378,97 +378,12 @@ func generateRandListHT(n uint64, wrt, dif int, cfg *LogConfig) (*ListHT, error)
 				Op: pb.Command_GET,
 			}
 		}
-		err = lt.Log(i, cmd)
+		err = st.Log(i, cmd)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return lt, nil
-}
-
-func generateRandArrayHT(n uint64, wrt, dif int, cfg *LogConfig) (*ArrayHT, error) {
-	srand := rand.NewSource(time.Now().UnixNano())
-	r := rand.New(srand)
-	var arr *ArrayHT
-	var err error
-
-	if cfg == nil {
-		arr = NewArrayHT() // uses DefaultLogConfig underneath
-	} else {
-		arr, err = NewArrayHTWithConfig(cfg)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	for i := uint64(0); i < n; i++ {
-		var cmd pb.Command
-		if cn := r.Intn(100); cn < wrt {
-			cmd = pb.Command{
-				Id:    i,
-				Key:   strconv.Itoa(r.Intn(dif)),
-				Value: strconv.Itoa(r.Int()),
-				Op:    pb.Command_SET,
-			}
-
-		} else {
-			// only SETS states are needed
-			cmd = pb.Command{
-				Id: i,
-				Op: pb.Command_GET,
-			}
-		}
-		err = arr.Log(i, cmd)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return arr, nil
-}
-
-func generateRandAVLTreeHT(n uint64, wrt, dif int, cfg *LogConfig) (*AVLTreeHT, error) {
-	srand := rand.NewSource(time.Now().UnixNano())
-	r := rand.New(srand)
-	var avl *AVLTreeHT
-	var err error
-
-	if cfg == nil {
-		avl = NewAVLTreeHT() // uses DefaultLogConfig underneath
-	} else {
-		avl, err = NewAVLTreeHTWithConfig(cfg)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	for i := uint64(0); i < n; i++ {
-		var cmd pb.Command
-		if cn := r.Intn(100); cn < wrt {
-			cmd = pb.Command{
-				Id:    i,
-				Key:   strconv.Itoa(r.Intn(dif)),
-				Value: strconv.Itoa(r.Int()),
-				Op:    pb.Command_SET,
-			}
-
-		} else {
-			// only SETS states are needed
-			cmd = pb.Command{
-				Id: i,
-				Op: pb.Command_GET,
-			}
-		}
-		err = avl.Log(i, cmd)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return avl, nil
-}
-
-func generateRandCircBuffHT(n uint64, wrt, dif int, cfg *LogConfig) (*AVLTreeHT, error) {
-	// TODO: ...
-	return nil, nil
+	return st, nil
 }
 
 // deserializeRawLog emulates the same procedure implemented by a recoverying

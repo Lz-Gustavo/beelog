@@ -2,7 +2,6 @@ package beelog
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/Lz-Gustavo/beelog/pb"
 )
@@ -90,7 +89,17 @@ func ApplyReduceAlgo(s Structure, r Reducer, p, n uint64) ([]pb.Command, error) 
 		break
 
 	case *CircBuffHT:
-		return nil, errors.New("CircBuffHT structure utilizes a different procedure, check 'cb.ExecuteReduceAlg' implementation")
+		switch r {
+		case IterCircBuff:
+			// a copy is created on concurrency unsafe scope. Check 'cb.ExecuteReduceAlgOnCopy'
+			// implementation for a safe alternative.
+			cp, _, _ := st.createStateCopy()
+			log = IterCircBuffHT(cp)
+			break
+
+		default:
+			return nil, errors.New("unsupported reduce algorithm for a CircBuffHT structure")
+		}
 
 	default:
 		return nil, errors.New("unsupported log datastructure")
@@ -352,13 +361,6 @@ func IterCircBuffHT(cp []State) []pb.Command {
 
 	for i := len(cp) - 1; i >= 0; i-- {
 		ent := cp[i]
-
-		if i == 0 {
-			fmt.Println("first:", ent.ind)
-		} else if i == len(cp)-1 {
-			fmt.Println("last:", ent.ind)
-		}
-
 		if _, ok := visited[ent.cmd.Key]; !ok {
 			visited[ent.cmd.Key] = true
 			log = append(log, ent.cmd)

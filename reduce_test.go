@@ -36,7 +36,7 @@ func TestListAlgos(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		l, err := generateRandListHT(tc.nCmds, tc.pWrts, tc.diffKeys, nil)
+		l, err := generateRandStructure(0, tc.nCmds, tc.pWrts, tc.diffKeys, nil)
 		if err != nil {
 			t.Log("test num", i, "failed with err:", err.Error())
 			t.FailNow()
@@ -82,23 +82,23 @@ func TestArrayAlgos(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		l, err := generateRandArrayHT(tc.nCmds, tc.pWrts, tc.diffKeys, nil)
+		ar, err := generateRandStructure(1, tc.nCmds, tc.pWrts, tc.diffKeys, nil)
 		if err != nil {
 			t.Log("test num", i, "failed with err:", err.Error())
 			t.FailNow()
 		}
 
 		if debugOutput {
-			t.Log("Init with", l.Len(), "commands:\n", l.Str())
+			t.Log("Init with", ar.Len(), "commands:\n", ar.Str())
 		}
 
-		log, err := ApplyReduceAlgo(l, tc.alg, 0, l.Len())
+		log, err := ApplyReduceAlgo(ar, tc.alg, 0, ar.Len())
 		if err != nil {
 			t.Log("test num", i, "failed with err:", err.Error())
 			t.FailNow()
 		}
 
-		t.Log("Removed commands:", l.Len()-uint64(len(log)))
+		t.Log("Removed commands:", ar.Len()-uint64(len(log)))
 		if debugOutput {
 			t.Log("Reduced Log:\n", log)
 		}
@@ -130,7 +130,7 @@ func TestAVLTreeAlgos(t *testing.T) {
 
 	log := []pb.Command{}
 	for _, tc := range testCases {
-		avl, err := generateRandAVLTreeHT(tc.numCmds, tc.writePercent, tc.diffKeys, nil)
+		avl, err := generateRandStructure(2, tc.numCmds, tc.writePercent, tc.diffKeys, nil)
 		if err != nil {
 			t.Log(err.Error())
 			t.FailNow()
@@ -160,6 +160,52 @@ func TestAVLTreeAlgos(t *testing.T) {
 		}
 		t.Logf("IterDFSAvl log:\n %v \n", log)
 		t.Log("Removed", tc.numCmds-uint64(len(log)), "comands")
+	}
+}
+
+func TestCircBuffAlgos(t *testing.T) {
+	debugOutput := false
+	testCases := []struct {
+		nCmds    uint64
+		pWrts    int
+		diffKeys int
+		alg      Reducer
+	}{
+		{
+			20,
+			100,
+			5,
+			IterCircBuff,
+		},
+		{
+			2000,
+			90,
+			1000,
+			IterCircBuff,
+		},
+	}
+
+	for i, tc := range testCases {
+		buf, err := generateRandStructure(3, tc.nCmds, tc.pWrts, tc.diffKeys, nil)
+		if err != nil {
+			t.Log("test num", i, "failed with err:", err.Error())
+			t.FailNow()
+		}
+
+		if debugOutput {
+			t.Log("Init with", buf.Len(), "commands:\n", buf.Str())
+		}
+
+		log, err := ApplyReduceAlgo(buf, tc.alg, 0, buf.Len())
+		if err != nil {
+			t.Log("test num", i, "failed with err:", err.Error())
+			t.FailNow()
+		}
+
+		t.Log("Removed commands:", buf.Len()-uint64(len(log)))
+		if debugOutput {
+			t.Log("Reduced Log:\n", log)
+		}
 	}
 }
 
@@ -195,11 +241,12 @@ func BenchmarkAVLTreeAlgos(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		for _, sc := range scenarios {
-			avl, err := generateRandAVLTreeHT(sc.numCmds, sc.writePercent, sc.diffKeys, nil)
+			st, err := generateRandStructure(2, sc.numCmds, sc.writePercent, sc.diffKeys, nil)
 			if err != nil {
 				b.Log(err.Error())
 				b.FailNow()
 			}
+			avl := st.(*AVLTreeHT)
 
 			b.ResetTimer()
 			b.Run("GreedyAvl", func(b *testing.B) {
