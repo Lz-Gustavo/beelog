@@ -2,6 +2,7 @@ package beelog
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/Lz-Gustavo/beelog/pb"
 )
@@ -342,8 +343,26 @@ func IterDFSAVLTreeHT(avl *AVLTreeHT, p, n uint64) []pb.Command {
 	return log
 }
 
-// IterCircBuffHT executes on top of a local copy of the log structure ...
-func IterCircBuffHT(copy []buffEntry, p, n uint64) []pb.Command {
-	// TODO:
-	return nil
+// IterCircBuffHT executes on top of a local copy of the log structure, parsing
+// the entire structure without any interval bound. During iteration, ignores
+// repetitive commands to a key already satisfied in log.
+func IterCircBuffHT(cp []State) []pb.Command {
+	log := []pb.Command{}
+	visited := make(map[string]bool, 0)
+
+	for i := len(cp) - 1; i >= 0; i-- {
+		ent := cp[i]
+
+		if i == 0 {
+			fmt.Println("first:", ent.ind)
+		} else if i == len(cp)-1 {
+			fmt.Println("last:", ent.ind)
+		}
+
+		if _, ok := visited[ent.cmd.Key]; !ok {
+			visited[ent.cmd.Key] = true
+			log = append(log, ent.cmd)
+		}
+	}
+	return log
 }

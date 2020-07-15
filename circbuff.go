@@ -37,7 +37,7 @@ type CircBuffHT struct {
 // NewCircBuffHT ...
 func NewCircBuffHT() *CircBuffHT {
 	ht := make(minStateTable, 0)
-	sl := make([]buffEntry, 0, defaultCap)
+	sl := make([]buffEntry, defaultCap, defaultCap) // fixed size
 	return &CircBuffHT{
 		logData: logData{config: DefaultLogConfig()},
 		buff:    &sl,
@@ -54,7 +54,7 @@ func NewCircBuffHTWithConfig(cfg *LogConfig, cap int) (*CircBuffHT, error) {
 	}
 
 	ht := make(minStateTable, 0)
-	sl := make([]buffEntry, 0, cap)
+	sl := make([]buffEntry, cap, cap) // fixed size
 	return &CircBuffHT{
 		logData: logData{config: cfg},
 		buff:    &sl,
@@ -89,9 +89,9 @@ func (cb *CircBuffHT) Len() uint64 {
 // a new node on the underlying liked list,  with a pointer to the newly inserted
 // state update on the update list for its particular key..
 func (cb *CircBuffHT) Log(index uint64, cmd pb.Command) error {
-
 	cb.mu.Lock()
 	var wrt bool
+
 	if cmd.Op != pb.Command_SET {
 		// TODO: treat 'ar.first' attribution on GETs
 		cb.last = index
@@ -175,7 +175,7 @@ func (cb *CircBuffHT) RecovBytes(p, n uint64) ([]byte, error) {
 }
 
 // ReduceLog ... is only launched on thread-safe routines ...
-func (cb *CircBuffHT) ReduceLog(cp []buffEntry, first, last uint64) error {
+func (cb *CircBuffHT) ReduceLog(cp []State, first, last uint64) error {
 	cmds, err := cb.ExecuteReduceAlg(cp, first, last)
 	if err != nil {
 		return err
@@ -184,7 +184,7 @@ func (cb *CircBuffHT) ReduceLog(cp []buffEntry, first, last uint64) error {
 }
 
 // mayTriggerReduce ... unsafe ... must be called from mutual exclusion ...
-func (cb *CircBuffHT) mayTriggerReduce(cp []buffEntry, first, last uint64) error {
+func (cb *CircBuffHT) mayTriggerReduce(cp []State, first, last uint64) error {
 	// cap surprassing on next insertion
 	if cb.len == cb.cap {
 		cb.resetBuffState()
@@ -207,7 +207,7 @@ func (cb *CircBuffHT) mayTriggerReduce(cp []buffEntry, first, last uint64) error
 // MUST ALWAYS match the first and last indexes contained on the local copy parameter.
 // Informing a different interval would incoherent with the Interval config and compromise
 // safety.
-func (cb *CircBuffHT) mayExecuteLazyReduce(cp []buffEntry, first, last uint64) error {
+func (cb *CircBuffHT) mayExecuteLazyReduce(cp []State, first, last uint64) error {
 	if cb.config.Tick == Delayed {
 		err := cb.ReduceLog(cp, first, last)
 		if err != nil {
@@ -232,24 +232,25 @@ func (cb *CircBuffHT) resetBuffState() {
 
 // createStateCopy returns a local view of the buffer structure and indexes metadata. Must
 // be called from mutual exclusion scope.
-func (cb *CircBuffHT) createStateCopy() ([]buffEntry, uint64, uint64) {
-	buff := []buffEntry{}
+func (cb *CircBuffHT) createStateCopy() ([]State, uint64, uint64) {
+	buff := []State{}
 	i := 0
 	for i < cb.len {
 		// negative values already account circular reference
 		pos := (cb.cur - cb.len + i) % cb.cap
-		v := (*cb.buff)[pos]
-		buff = append(buff, v)
+		ent := (*cb.buff)[pos]
+		st := (*cb.aux)[ent.key]
+		buff = append(buff, st)
 		i++
 	}
 	return buff, cb.first, cb.last
 }
 
 // ExecuteReduceAlg launches the config algorithm on a conflict-free copy.
-func (cb *CircBuffHT) ExecuteReduceAlg(cp []buffEntry, p, n uint64) ([]pb.Command, error) {
+func (cb *CircBuffHT) ExecuteReduceAlg(cp []State, p, n uint64) ([]pb.Command, error) {
 	switch cb.config.Alg {
 	case IterCircBuff:
-		return IterCircBuffHT(cp, p, n), nil
+		return IterCircBuffHT(cp), nil
 	}
 	return nil, errors.New("unsupported reduce algorithm for a CircBuffHT structure")
 }

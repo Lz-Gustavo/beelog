@@ -19,11 +19,13 @@ import (
 func TestStructuresLog(t *testing.T) {
 	first := uint64(1)
 	n := uint64(1000)
+
 	avl := NewAVLTreeHT()
 	lt := NewListHT()
 	arr := NewArrayHT()
+	buf := NewCircBuffHT()
 
-	for _, st := range []Structure{avl, lt, arr} {
+	for _, st := range []Structure{avl, lt, arr, buf} {
 		// populate some SET commands
 		for i := first; i < n; i++ {
 			// TODO: yeah, I will change this API of index log in time
@@ -80,6 +82,16 @@ func TestStructuresLog(t *testing.T) {
 	}
 	if arr.last != n {
 		t.Log("last cmd index is", arr.last, ", expected", n)
+		t.FailNow()
+	}
+
+	// and circular buffer
+	if buf.first != first {
+		t.Log("first cmd index is", buf.first, ", expected", first)
+		t.FailNow()
+	}
+	if buf.last != n {
+		t.Log("last cmd index is", buf.last, ", expected", n)
 		t.FailNow()
 	}
 }
