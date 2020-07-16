@@ -133,8 +133,11 @@ func (av *AVLTreeHT) Log(index uint64, cmd pb.Command) error {
 	return av.mayTriggerReduce()
 }
 
-// Recov ... mention that when 'inmem' is true the persistent way is ineficient,
-// considering use RecovBytes instead ...
+// Recov returns a compacted log of commands, following the requested [p, n]
+// interval if 'Delayed' reduce is configured. On different period configurations,
+// the entire reduced log is always returned. On persistent configuration (i.e.
+// 'inmem' false) the entire log is loaded and then unmarshaled, consider using
+// 'RecovBytes' calls instead.
 func (av *AVLTreeHT) Recov(p, n uint64) ([]pb.Command, error) {
 	if n < p {
 		return nil, errors.New("invalid interval request, 'n' must be >= 'p'")
@@ -148,8 +151,11 @@ func (av *AVLTreeHT) Recov(p, n uint64) ([]pb.Command, error) {
 	return av.retrieveLog()
 }
 
-// RecovBytes ... returns an already serialized data, most efficient approach
-// when 'av.config.Inmem == false' ... Describe the slicing protocol for pbuffs
+// RecovBytes returns an already serialized log, parsed from persistent storage
+// or marshaled from the in-memory state. Its the most efficient approach on persistent
+// configuration, avoiding an extra marshaling step during recovery. The command
+// interpretation from the byte stream follows a simple slicing protocol, where
+// the size of each command is binary encoded before the raw pbuff.
 func (av *AVLTreeHT) RecovBytes(p, n uint64) ([]byte, error) {
 	if n < p {
 		return nil, errors.New("invalid interval request, 'n' must be >= 'p'")
@@ -163,7 +169,8 @@ func (av *AVLTreeHT) RecovBytes(p, n uint64) ([]byte, error) {
 	return av.retrieveRawLog(p, n)
 }
 
-// ReduceLog ... is only launched on thread-safe routines ...
+// ReduceLog applies the configured reduce algorithm and updates the current log state.
+// Must only be called within mutual exclusion scope.
 func (av *AVLTreeHT) ReduceLog(p, n uint64) error {
 	cmds, err := ApplyReduceAlgo(av, av.config.Alg, p, n)
 	if err != nil {
@@ -172,7 +179,8 @@ func (av *AVLTreeHT) ReduceLog(p, n uint64) error {
 	return av.updateLogState(cmds, p, n)
 }
 
-// mayTriggerReduce ... unsafe ... must be called from mutual exclusion ...
+// mayTriggerReduce possibly triggers the reduce algorithm based on config params
+// (e.g. interval period reached). Must only be called within mutual exclusion scope.
 func (av *AVLTreeHT) mayTriggerReduce() error {
 	if av.config.Tick != Interval {
 		return nil
@@ -185,8 +193,9 @@ func (av *AVLTreeHT) mayTriggerReduce() error {
 	return nil
 }
 
+// mayExecuteLazyReduce triggers a reduce procedure if delayed config is set or first
+// 'config.Period' wasnt reached yet.
 func (av *AVLTreeHT) mayExecuteLazyReduce(p, n uint64) error {
-	// reduced if delayed config or first 'av.config.Period' wasnt reached yet
 	if av.config.Tick == Delayed {
 		err := av.ReduceLog(p, n)
 		if err != nil {

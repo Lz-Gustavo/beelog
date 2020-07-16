@@ -48,7 +48,7 @@ func NewArrayHTWithConfig(cfg *LogConfig) (*ArrayHT, error) {
 	}, nil
 }
 
-// Str returns a string representation of the list state, used for debug purposes.
+// Str returns a string representation of the array state, used for debug purposes.
 func (ar *ArrayHT) Str() string {
 	ar.mu.RLock()
 	defer ar.mu.RUnlock()
@@ -65,9 +65,9 @@ func (ar *ArrayHT) Len() uint64 {
 	return uint64(len(*ar.arr))
 }
 
-// Log records the occurence of command 'cmd' on the provided index. Writes are as
-//  a new node on the underlying liked list,  with a pointer to the newly inserted
-// state update on the update list for its particular key..
+// Log records the occurence of command 'cmd' on the provided index. Writes are
+// mapped as a new node on the underlying array, with a pointer to the newly inserted
+// state update on the update list for its particular key.
 func (ar *ArrayHT) Log(index uint64, cmd pb.Command) error {
 	ar.mu.Lock()
 	defer ar.mu.Unlock()
@@ -119,8 +119,11 @@ func (ar *ArrayHT) Log(index uint64, cmd pb.Command) error {
 	return ar.mayTriggerReduce()
 }
 
-// Recov ... mention that when 'inmem' is true the persistent way is ineficient,
-// considering use RecovBytes instead ...
+// Recov returns a compacted log of commands, following the requested [p, n]
+// interval if 'Delayed' reduce is configured. On different period configurations,
+// the entire reduced log is always returned. On persistent configuration (i.e.
+// 'inmem' false) the entire log is loaded and then unmarshaled, consider using
+// 'RecovBytes' calls instead.
 func (ar *ArrayHT) Recov(p, n uint64) ([]pb.Command, error) {
 	if n < p {
 		return nil, errors.New("invalid interval request, 'n' must be >= 'p'")
@@ -134,8 +137,11 @@ func (ar *ArrayHT) Recov(p, n uint64) ([]pb.Command, error) {
 	return ar.retrieveLog()
 }
 
-// RecovBytes ... returns an already serialized data, most efficient approach
-// when 'ar.config.Inmem == false' ... Describe the slicing protocol for pbuffs
+// RecovBytes returns an already serialized log, parsed from persistent storage
+// or marshaled from the in-memory state. Its the most efficient approach on persistent
+// configuration, avoiding an extra marshaling step during recovery. The command
+// interpretation from the byte stream follows a simple slicing protocol, where
+// the size of each command is binary encoded before the raw pbuff.
 func (ar *ArrayHT) RecovBytes(p, n uint64) ([]byte, error) {
 	if n < p {
 		return nil, errors.New("invalid interval request, 'n' must be >= 'p'")
@@ -149,7 +155,8 @@ func (ar *ArrayHT) RecovBytes(p, n uint64) ([]byte, error) {
 	return ar.retrieveRawLog(p, n)
 }
 
-// ReduceLog ... is only launched on thread-safe routines ...
+// ReduceLog applies the configured reduce algorithm and updates the current log state.
+// Must only be called within mutual exclusion scope.
 func (ar *ArrayHT) ReduceLog(p, n uint64) error {
 	cmds, err := ApplyReduceAlgo(ar, ar.config.Alg, p, n)
 	if err != nil {
@@ -158,7 +165,8 @@ func (ar *ArrayHT) ReduceLog(p, n uint64) error {
 	return ar.updateLogState(cmds, p, n)
 }
 
-// mayTriggerReduce ... unsafe ... must be called from mutual exclusion ...
+// mayTriggerReduce possibly triggers the reduce algorithm based on config params
+// (e.g. interval period reached). Must only be called within mutual exclusion scope.
 func (ar *ArrayHT) mayTriggerReduce() error {
 	if ar.config.Tick != Interval {
 		return nil
@@ -171,8 +179,9 @@ func (ar *ArrayHT) mayTriggerReduce() error {
 	return nil
 }
 
+// mayExecuteLazyReduce triggers a reduce procedure if delayed config is set or first
+// 'config.Period' wasnt reached yet.
 func (ar *ArrayHT) mayExecuteLazyReduce(p, n uint64) error {
-	// reduced if delayed config or first 'av.config.Period' wasnt reached yet
 	if ar.config.Tick == Delayed {
 		err := ar.ReduceLog(p, n)
 		if err != nil {

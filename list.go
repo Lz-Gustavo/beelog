@@ -65,9 +65,9 @@ func (l *ListHT) Len() uint64 {
 	return l.lt.len
 }
 
-// Log records the occurence of command 'cmd' on the provided index. Writes are as
-//  a new node on the underlying liked list,  with a pointer to the newly inserted
-// state update on the update list for its particular key..
+// Log records the occurence of command 'cmd' on the provided index. Writes are
+// mapped as a new node on the underlying liked list, with a pointer to the newly
+// inserted state update on the update list for its particular key.
 func (l *ListHT) Log(index uint64, cmd pb.Command) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -119,8 +119,11 @@ func (l *ListHT) Log(index uint64, cmd pb.Command) error {
 	return l.mayTriggerReduce()
 }
 
-// Recov ... mention that when 'inmem' is true the persistent way is ineficient,
-// considering use RecovBytes instead ...
+// Recov returns a compacted log of commands, following the requested [p, n]
+// interval if 'Delayed' reduce is configured. On different period configurations,
+// the entire reduced log is always returned. On persistent configuration (i.e.
+// 'inmem' false) the entire log is loaded and then unmarshaled, consider using
+// 'RecovBytes' calls instead.
 func (l *ListHT) Recov(p, n uint64) ([]pb.Command, error) {
 	if n < p {
 		return nil, errors.New("invalid interval request, 'n' must be >= 'p'")
@@ -134,8 +137,11 @@ func (l *ListHT) Recov(p, n uint64) ([]pb.Command, error) {
 	return l.retrieveLog()
 }
 
-// RecovBytes ... returns an already serialized data, most efficient approach
-// when 'l.config.Inmem == false' ... Describe the slicing protocol for pbuffs
+// RecovBytes returns an already serialized log, parsed from persistent storage
+// or marshaled from the in-memory state. Its the most efficient approach on persistent
+// configuration, avoiding an extra marshaling step during recovery. The command
+// interpretation from the byte stream follows a simple slicing protocol, where
+// the size of each command is binary encoded before the raw pbuff.
 func (l *ListHT) RecovBytes(p, n uint64) ([]byte, error) {
 	if n < p {
 		return nil, errors.New("invalid interval request, 'n' must be >= 'p'")
@@ -149,7 +155,8 @@ func (l *ListHT) RecovBytes(p, n uint64) ([]byte, error) {
 	return l.retrieveRawLog(p, n)
 }
 
-// ReduceLog ... is only launched on thread-safe routines ...
+// ReduceLog applies the configured reduce algorithm and updates the current log state.
+// Must only be called within mutual exclusion scope.
 func (l *ListHT) ReduceLog(p, n uint64) error {
 	cmds, err := ApplyReduceAlgo(l, l.config.Alg, p, n)
 	if err != nil {
@@ -158,7 +165,8 @@ func (l *ListHT) ReduceLog(p, n uint64) error {
 	return l.updateLogState(cmds, p, n)
 }
 
-// mayTriggerReduce ... unsafe ... must be called from mutual exclusion ...
+// mayTriggerReduce possibly triggers the reduce algorithm based on config params
+// (e.g. interval period reached). Must only be called within mutual exclusion scope.
 func (l *ListHT) mayTriggerReduce() error {
 	if l.config.Tick != Interval {
 		return nil
@@ -171,8 +179,9 @@ func (l *ListHT) mayTriggerReduce() error {
 	return nil
 }
 
+// mayExecuteLazyReduce triggers a reduce procedure if delayed config is set or first
+// 'config.Period' wasnt reached yet.
 func (l *ListHT) mayExecuteLazyReduce(p, n uint64) error {
-	// reduced if delayed config or first 'av.config.Period' wasnt reached yet
 	if l.config.Tick == Delayed {
 		err := l.ReduceLog(p, n)
 		if err != nil {

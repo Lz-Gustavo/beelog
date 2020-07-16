@@ -63,7 +63,7 @@ func NewCircBuffHTWithConfig(cfg *LogConfig, cap int) (*CircBuffHT, error) {
 	}, nil
 }
 
-// Str returns a string representation of the list state, used for debug purposes.
+// Str returns a string representation of the buffer state, used for debug purposes.
 func (cb *CircBuffHT) Str() string {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
@@ -85,9 +85,9 @@ func (cb *CircBuffHT) Len() uint64 {
 	return uint64(cb.len)
 }
 
-// Log records the occurence of command 'cmd' on the provided index. Writes are as
-// a new node on the underlying liked list,  with a pointer to the newly inserted
-// state update on the update list for its particular key..
+// Log records the occurence of command 'cmd' on the provided index. Writes are
+// mapped as a new node on the buffer array, with a pointer to the newly inserted
+// state update on the update list for its particular key.
 func (cb *CircBuffHT) Log(index uint64, cmd pb.Command) error {
 	cb.mu.Lock()
 	var wrt bool
@@ -142,9 +142,11 @@ func (cb *CircBuffHT) Log(index uint64, cmd pb.Command) error {
 	return cb.mayTriggerReduce(cp, f, l)
 }
 
-// Recov ... mention that when 'inmem' is true the persistent way is ineficient,
-// considering use RecovBytes instead ...
-// NOTE: [p, n] indexes are ignored on CircBuff structures ...
+// Recov returns a compacted log of commands, following the requested [p, n]
+// interval if 'Delayed' reduce is configured. On different period configurations,
+// the entire reduced log is always returned. On persistent configuration (i.e.
+// 'inmem' false) the entire log is loaded and then unmarshaled, consider using
+// 'RecovBytes' calls instead. On CircBuff structures, indexes [p, n] are ignored.
 func (cb *CircBuffHT) Recov(p, n uint64) ([]pb.Command, error) {
 	if n < p {
 		return nil, errors.New("invalid interval request, 'n' must be >= 'p'")
@@ -159,9 +161,12 @@ func (cb *CircBuffHT) Recov(p, n uint64) ([]pb.Command, error) {
 	return cb.retrieveLog()
 }
 
-// RecovBytes ... returns an already serialized data, most efficient approach
-// when 'cb.config.Inmem == false' ... Describe the slicing protocol for pbuffs
-// NOTE: [p, n] indexes are ignored on CircBuff structures ...
+// RecovBytes returns an already serialized log, parsed from persistent storage
+// or marshaled from the in-memory state. Its the most efficient approach on persistent
+// configuration, avoiding an extra marshaling step during recovery. The command
+// interpretation from the byte stream follows a simple slicing protocol, where
+// the size of each command is binary encoded before the raw pbuff. On CircBuff
+// structures, indexes [p, n] are ignored.
 func (cb *CircBuffHT) RecovBytes(p, n uint64) ([]byte, error) {
 	if n < p {
 		return nil, errors.New("invalid interval request, 'n' must be >= 'p'")
@@ -212,9 +217,9 @@ func (cb *CircBuffHT) mayTriggerReduce(cp []State, first, last uint64) error {
 }
 
 // mayExecuteLazyReduce triggers a reduce procedure if delayed config is set or first
-// 'av.config.Period' wasnt reached yet. On CircBuff structures, informed [first, last]
+// 'config.Period' wasnt reached yet. On CircBuff structures, informed [first, last]
 // MUST ALWAYS match the first and last indexes contained on the local copy parameter.
-// Informing a different interval would incoherent with the Interval config and compromise
+// Informing a different interval would incoherent with the 'Interval' config and compromise
 // safety.
 func (cb *CircBuffHT) mayExecuteLazyReduce(cp []State, first, last uint64) error {
 	if cb.config.Tick == Delayed {
