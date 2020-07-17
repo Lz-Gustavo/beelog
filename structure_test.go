@@ -2,10 +2,12 @@ package beelog
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"math/rand"
+	"os"
 	"reflect"
 	"strconv"
 	"testing"
@@ -23,7 +25,7 @@ func TestStructuresLog(t *testing.T) {
 	avl := NewAVLTreeHT()
 	lt := NewListHT()
 	arr := NewArrayHT()
-	buf := NewCircBuffHT()
+	buf := NewCircBuffHT(context.TODO())
 
 	for _, st := range []Structure{avl, lt, arr, buf} {
 		// populate some SET commands
@@ -102,6 +104,10 @@ func TestStructuresDifferentRecoveries(t *testing.T) {
 	nCmds, wrt, dif := uint64(2000), 50, 10
 	p, n := uint64(10), uint64(2000)
 
+	// For now, interval config is intentionally delayed to allow a state
+	// comparison between the different routines.
+	//
+	// TODO: Implement an exclusive test procedure for intervalar reduce.
 	cfgs := []LogConfig{
 		{ // immediately inmem
 			Tick:  Immediately,
@@ -113,7 +119,7 @@ func TestStructuresDifferentRecoveries(t *testing.T) {
 		},
 		{ // interval inmem
 			Tick:   Interval,
-			Period: 100,
+			Period: 10000,
 			Inmem:  true,
 		},
 		{ // immediately disk
@@ -128,7 +134,7 @@ func TestStructuresDifferentRecoveries(t *testing.T) {
 		},
 		{ // interval disk
 			Tick:   Interval,
-			Period: 100,
+			Period: 10000,
 			Inmem:  false,
 			Fname:  "./logstate.out",
 		},
@@ -164,6 +170,17 @@ func TestStructuresDifferentRecoveries(t *testing.T) {
 
 	for _, tc := range testCases {
 		for j, cf := range tc.configs {
+
+			// delete current logstate, if any, in order to avoid conflict on
+			// persistent interval scenarios
+			if cf.Tick == Interval && cf.Fname != "" {
+				err := os.Remove(cf.Fname)
+				if err != nil && os.IsNotExist(err) {
+					t.Log(err.Error())
+					t.FailNow()
+				}
+			}
+
 			var st Structure
 			var err error
 
@@ -348,9 +365,9 @@ func generateRandStructure(id uint8, n uint64, wrt, dif int, cfg *LogConfig) (St
 
 	case 3: // circbuff
 		if cfg == nil {
-			st = NewCircBuffHT()
+			st = NewCircBuffHT(context.TODO())
 		} else {
-			st, err = NewCircBuffHTWithConfig(cfg, int(n))
+			st, err = NewCircBuffHTWithConfig(context.TODO(), cfg, int(n))
 			if err != nil {
 				return nil, err
 			}

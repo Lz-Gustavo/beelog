@@ -1,8 +1,10 @@
 package beelog
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 
@@ -10,7 +12,8 @@ import (
 )
 
 const (
-	defaultCap = 4000
+	defaultCap   = 4000
+	chanBuffSize = 128
 )
 
 // buffEntry (ies) are equivalent to list entries without any "shortcut" ptr
@@ -37,25 +40,33 @@ type CircBuffHT struct {
 	buff *[]buffEntry
 	aux  *minStateTable
 	mu   sync.Mutex
+	canc context.CancelFunc
 
 	cur, cap, len int
+	reduceReq     chan buffCopy
 	logData
 }
 
 // NewCircBuffHT ...
-func NewCircBuffHT() *CircBuffHT {
+func NewCircBuffHT(ctx context.Context) *CircBuffHT {
 	ht := make(minStateTable, 0)
 	sl := make([]buffEntry, defaultCap, defaultCap) // fixed size
-	return &CircBuffHT{
-		logData: logData{config: DefaultLogConfig()},
-		buff:    &sl,
-		aux:     &ht,
-		cap:     defaultCap,
+	ct, cancel := context.WithCancel(ctx)
+
+	cb := &CircBuffHT{
+		logData:   logData{config: DefaultLogConfig()},
+		buff:      &sl,
+		aux:       &ht,
+		cap:       defaultCap,
+		canc:      cancel,
+		reduceReq: make(chan buffCopy, chanBuffSize),
 	}
+	go cb.handleReduce(ct)
+	return cb
 }
 
 // NewCircBuffHTWithConfig ...
-func NewCircBuffHTWithConfig(cfg *LogConfig, cap int) (*CircBuffHT, error) {
+func NewCircBuffHTWithConfig(ctx context.Context, cfg *LogConfig, cap int) (*CircBuffHT, error) {
 	err := cfg.ValidateConfig()
 	if err != nil {
 		return nil, err
@@ -63,12 +74,18 @@ func NewCircBuffHTWithConfig(cfg *LogConfig, cap int) (*CircBuffHT, error) {
 
 	ht := make(minStateTable, 0)
 	sl := make([]buffEntry, cap, cap) // fixed size
-	return &CircBuffHT{
-		logData: logData{config: cfg},
-		buff:    &sl,
-		aux:     &ht,
-		cap:     cap,
-	}, nil
+	ct, cancel := context.WithCancel(ctx)
+
+	cb := &CircBuffHT{
+		logData:   logData{config: cfg},
+		buff:      &sl,
+		aux:       &ht,
+		cap:       cap,
+		canc:      cancel,
+		reduceReq: make(chan buffCopy, chanBuffSize),
+	}
+	go cb.handleReduce(ct)
+	return cb, nil
 }
 
 // Str returns a string representation of the buffer state, used for debug purposes.
@@ -147,11 +164,13 @@ func (cb *CircBuffHT) Log(index uint64, cmd pb.Command) error {
 	cp := cb.createStateCopy()
 	cb.mu.Unlock()
 
-	// immediately recovery entirely reduces the log to its minimal format
+	// Immediately recovery entirely reduces the log to its minimal format, and
+	// delays logging until reduce is finished.
 	if wrt && cb.config.Tick == Immediately {
 		return cb.ReduceLog(cp)
 	}
-	return cb.mayTriggerReduce(cp)
+	cb.mayTriggerReduce(cp)
+	return nil
 }
 
 // Recov returns a compacted log of commands, following the requested [p, n]
@@ -167,6 +186,7 @@ func (cb *CircBuffHT) Recov(p, n uint64) ([]pb.Command, error) {
 	cp := cb.createStateCopy()
 	cb.mu.Unlock()
 
+	// sequentially reduce since 'Recov' will already be called concurrently
 	if err := cb.mayExecuteLazyReduce(cp); err != nil {
 		return nil, err
 	}
@@ -187,6 +207,7 @@ func (cb *CircBuffHT) RecovBytes(p, n uint64) ([]byte, error) {
 	cp := cb.createStateCopy()
 	cb.mu.Unlock()
 
+	// sequentially reduce since 'RecovBytes' will already be called concurrently
 	if err := cb.mayExecuteLazyReduce(cp); err != nil {
 		return nil, err
 	}
@@ -199,7 +220,7 @@ func (cb *CircBuffHT) RecovBytes(p, n uint64) ([]byte, error) {
 // TODO: maybe implement mutual exclusion during state update using a different
 // lock.
 func (cb *CircBuffHT) ReduceLog(cp buffCopy) error {
-	cmds, err := cb.ExecuteReduceAlgOnCopy(&cp)
+	cmds, err := cb.executeReduceAlgOnCopy(&cp)
 	if err != nil {
 		return err
 	}
@@ -210,22 +231,22 @@ func (cb *CircBuffHT) ReduceLog(cp buffCopy) error {
 // (e.g. interval period reached) or when the buffer capacity is surprassed on next
 // insertion. The circular buffer variant operates over a copy, so it's safe to be
 // called concurrently.
-func (cb *CircBuffHT) mayTriggerReduce(cp buffCopy) error {
+func (cb *CircBuffHT) mayTriggerReduce(cp buffCopy) {
 	// cap surprassing on next insertion
 	if cb.len == cb.cap {
 		cb.resetBuffState()
-		return cb.ReduceLog(cp)
+		cb.reduceReq <- cp
+		return
 	}
 
 	if cb.config.Tick != Interval {
-		return nil
+		return
 	}
 	cb.count++
 	if cb.count >= cb.config.Period {
 		cb.count = 0
-		return cb.ReduceLog(cp)
+		cb.reduceReq <- cp
 	}
-	return nil
 }
 
 // mayExecuteLazyReduce triggers a reduce procedure if delayed config is set or first
@@ -279,11 +300,31 @@ func (cb *CircBuffHT) createStateCopy() buffCopy {
 	return cp
 }
 
-// ExecuteReduceAlgOnCopy applies the configured reduce algorithm on a conflict-free copy.
-func (cb *CircBuffHT) ExecuteReduceAlgOnCopy(cp *buffCopy) ([]pb.Command, error) {
+// executeReduceAlgOnCopy applies the configured reduce algorithm on a conflict-free copy.
+func (cb *CircBuffHT) executeReduceAlgOnCopy(cp *buffCopy) ([]pb.Command, error) {
 	switch cb.config.Alg {
 	case IterCircBuff:
 		return IterCircBuffHT(cp), nil
 	}
 	return nil, errors.New("unsupported reduce algorithm for a CircBuffHT structure")
+}
+
+func (cb *CircBuffHT) handleReduce(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case cp := <-cb.reduceReq:
+			err := cb.ReduceLog(cp)
+			if err != nil {
+				log.Fatalln("failed during reduce procedure, err:", err.Error())
+			}
+		}
+	}
+}
+
+// Shutdown ...
+func (cb *CircBuffHT) Shutdown() {
+	cb.canc()
 }
