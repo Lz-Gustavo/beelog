@@ -24,6 +24,14 @@ type buffEntry struct {
 // the lates state for each key.
 type minStateTable map[string]State
 
+// buffCopy stores only the useful data for a structure snapshot.
+type buffCopy struct {
+	buf           []buffEntry
+	tbl           minStateTable
+	cur, cap, len int
+	first, last   uint64
+}
+
 // CircBuffHT ...
 type CircBuffHT struct {
 	buff *[]buffEntry
@@ -130,16 +138,20 @@ func (cb *CircBuffHT) Log(index uint64, cmd pb.Command) error {
 		cb.len++
 	}
 
-	// Pessimistic approach, create a copy on every update for a POSSIBLE reduce.
-	// Optimize later.
-	cp, f, l := cb.createStateCopy()
+	// avoid an unecessary copy, reduce algorithm will be later executed
+	if cb.config.Tick == Delayed && cb.len != cb.cap {
+		cb.mu.Unlock()
+		return nil
+	}
+
+	cp := cb.createStateCopy()
 	cb.mu.Unlock()
 
 	// immediately recovery entirely reduces the log to its minimal format
 	if wrt && cb.config.Tick == Immediately {
-		return cb.ReduceLog(cp, f, l)
+		return cb.ReduceLog(cp)
 	}
-	return cb.mayTriggerReduce(cp, f, l)
+	return cb.mayTriggerReduce(cp)
 }
 
 // Recov returns a compacted log of commands, following the requested [p, n]
@@ -152,10 +164,10 @@ func (cb *CircBuffHT) Recov(p, n uint64) ([]pb.Command, error) {
 		return nil, errors.New("invalid interval request, 'n' must be >= 'p'")
 	}
 	cb.mu.Lock()
-	cp, f, l := cb.createStateCopy()
+	cp := cb.createStateCopy()
 	cb.mu.Unlock()
 
-	if err := cb.mayExecuteLazyReduce(cp, f, l); err != nil {
+	if err := cb.mayExecuteLazyReduce(cp); err != nil {
 		return nil, err
 	}
 	return cb.retrieveLog()
@@ -172,13 +184,13 @@ func (cb *CircBuffHT) RecovBytes(p, n uint64) ([]byte, error) {
 		return nil, errors.New("invalid interval request, 'n' must be >= 'p'")
 	}
 	cb.mu.Lock()
-	cp, f, l := cb.createStateCopy()
+	cp := cb.createStateCopy()
 	cb.mu.Unlock()
 
-	if err := cb.mayExecuteLazyReduce(cp, f, l); err != nil {
+	if err := cb.mayExecuteLazyReduce(cp); err != nil {
 		return nil, err
 	}
-	return cb.retrieveRawLog(f, l)
+	return cb.retrieveRawLog(cp.first, cp.last)
 }
 
 // ReduceLog applies the configured algorithm on a concurrent-safe copy and
@@ -186,23 +198,23 @@ func (cb *CircBuffHT) RecovBytes(p, n uint64) ([]byte, error) {
 //
 // TODO: maybe implement mutual exclusion during state update using a different
 // lock.
-func (cb *CircBuffHT) ReduceLog(cp []State, first, last uint64) error {
-	cmds, err := cb.ExecuteReduceAlgOnCopy(cp)
+func (cb *CircBuffHT) ReduceLog(cp buffCopy) error {
+	cmds, err := cb.ExecuteReduceAlgOnCopy(&cp)
 	if err != nil {
 		return err
 	}
-	return cb.updateLogState(cmds, first, last)
+	return cb.updateLogState(cmds, cp.first, cp.last)
 }
 
 // mayTriggerReduce possibly triggers the reduce algorithm based on config params
 // (e.g. interval period reached) or when the buffer capacity is surprassed on next
 // insertion. The circular buffer variant operates over a copy, so it's safe to be
 // called concurrently.
-func (cb *CircBuffHT) mayTriggerReduce(cp []State, first, last uint64) error {
+func (cb *CircBuffHT) mayTriggerReduce(cp buffCopy) error {
 	// cap surprassing on next insertion
 	if cb.len == cb.cap {
 		cb.resetBuffState()
-		return cb.ReduceLog(cp, first, last)
+		return cb.ReduceLog(cp)
 	}
 
 	if cb.config.Tick != Interval {
@@ -211,7 +223,7 @@ func (cb *CircBuffHT) mayTriggerReduce(cp []State, first, last uint64) error {
 	cb.count++
 	if cb.count >= cb.config.Period {
 		cb.count = 0
-		return cb.ReduceLog(cp, first, last)
+		return cb.ReduceLog(cp)
 	}
 	return nil
 }
@@ -221,15 +233,15 @@ func (cb *CircBuffHT) mayTriggerReduce(cp []State, first, last uint64) error {
 // MUST ALWAYS match the first and last indexes contained on the local copy parameter.
 // Informing a different interval would incoherent with the 'Interval' config and compromise
 // safety.
-func (cb *CircBuffHT) mayExecuteLazyReduce(cp []State, first, last uint64) error {
+func (cb *CircBuffHT) mayExecuteLazyReduce(cp buffCopy) error {
 	if cb.config.Tick == Delayed {
-		err := cb.ReduceLog(cp, first, last)
+		err := cb.ReduceLog(cp)
 		if err != nil {
 			return err
 		}
 
 	} else if cb.config.Tick == Interval && !cb.firstReduceExists() {
-		err := cb.ReduceLog(cp, first, last)
+		err := cb.ReduceLog(cp)
 		if err != nil {
 			return err
 		}
@@ -249,22 +261,26 @@ func (cb *CircBuffHT) resetBuffState() {
 //
 // TODO: investigate trade-offs between copying an array of states or the buffer array and
 // the auxiliar hash table.
-func (cb *CircBuffHT) createStateCopy() ([]State, uint64, uint64) {
-	buff := []State{}
-	i := 0
-	for i < cb.len {
-		// negative values already account circular reference
-		pos := (cb.cur - cb.len + i) % cb.cap
-		ent := (*cb.buff)[pos]
-		st := (*cb.aux)[ent.key]
-		buff = append(buff, st)
-		i++
+func (cb *CircBuffHT) createStateCopy() buffCopy {
+	cp := buffCopy{
+		cur:   cb.cur,
+		len:   cb.len,
+		cap:   cb.cap,
+		first: cb.first,
+		last:  cb.last,
+		buf:   make([]buffEntry, cb.cap, cb.cap),
+		tbl:   make(minStateTable, len(*cb.aux)),
 	}
-	return buff, cb.first, cb.last
+
+	copy(cp.buf, *cb.buff)
+	for k, v := range *cb.aux {
+		cp.tbl[k] = v
+	}
+	return cp
 }
 
 // ExecuteReduceAlgOnCopy applies the configured reduce algorithm on a conflict-free copy.
-func (cb *CircBuffHT) ExecuteReduceAlgOnCopy(cp []State) ([]pb.Command, error) {
+func (cb *CircBuffHT) ExecuteReduceAlgOnCopy(cp *buffCopy) ([]pb.Command, error) {
 	switch cb.config.Alg {
 	case IterCircBuff:
 		return IterCircBuffHT(cp), nil

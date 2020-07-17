@@ -93,8 +93,8 @@ func ApplyReduceAlgo(s Structure, r Reducer, p, n uint64) ([]pb.Command, error) 
 		case IterCircBuff:
 			// a copy is created on concurrency unsafe scope. Check 'cb.ExecuteReduceAlgOnCopy'
 			// implementation for a safe alternative.
-			cp, _, _ := st.createStateCopy()
-			log = IterCircBuffHT(cp)
+			cp := st.createStateCopy()
+			log = IterCircBuffHT(&cp)
 			break
 
 		default:
@@ -355,16 +355,25 @@ func IterDFSAVLTreeHT(avl *AVLTreeHT, p, n uint64) []pb.Command {
 // IterCircBuffHT executes on top of a local copy of the log structure, parsing
 // the entire structure without any interval bound. During iteration, ignores
 // repetitive commands to a key already satisfied in log.
-func IterCircBuffHT(cp []State) []pb.Command {
+func IterCircBuffHT(cp *buffCopy) []pb.Command {
 	log := []pb.Command{}
 	visited := make(map[string]bool, 0)
 
-	for i := len(cp) - 1; i >= 0; i-- {
-		ent := cp[i]
-		if _, ok := visited[ent.cmd.Key]; !ok {
-			visited[ent.cmd.Key] = true
-			log = append(log, ent.cmd)
+	i := 0
+	for i < (*cp).len {
+		// negative values already account circular reference. In order to change
+		// order (oldest cmmd first), just switch to:
+		//   pos := (cur - len + i) % cap
+
+		pos := ((*cp).cur - 1 - i) % (*cp).cap
+		ent := (*cp).buf[pos]
+		st := (*cp).tbl[ent.key]
+
+		if _, ok := visited[ent.key]; !ok {
+			visited[ent.key] = true
+			log = append(log, st.cmd)
 		}
+		i++
 	}
 	return log
 }
