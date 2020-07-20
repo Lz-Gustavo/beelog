@@ -104,6 +104,7 @@ type stateTable map[string]*list
 // logData is the general data for each implementation of Structure interface
 type logData struct {
 	config      *LogConfig
+	logged      bool
 	first, last uint64
 	recentLog   *[]pb.Command // used only on Immediately inmem config
 	count       uint32        // used on Interval config

@@ -34,6 +34,9 @@ const (
 
 	// IterCircBuff ...
 	IterCircBuff
+
+	// IterConcTable ...
+	IterConcTable
 )
 
 // ApplyReduceAlgo executes over a Structure the choosen Reducer algorithm, returning
@@ -99,6 +102,16 @@ func ApplyReduceAlgo(s Structure, r Reducer, p, n uint64) ([]pb.Command, error) 
 
 		default:
 			return nil, errors.New("unsupported reduce algorithm for a CircBuffHT structure")
+		}
+
+	case *ConcTable:
+		switch r {
+		case IterConcTable:
+			view := st.retrieveCurrentViewCopy()
+			log = IterConcTableOnView(&view)
+
+		default:
+			return nil, errors.New("unsupported reduce algorithm for a ConcTable structure")
 		}
 
 	default:
@@ -374,6 +387,15 @@ func IterCircBuffHT(cp *buffCopy) []pb.Command {
 			log = append(log, st.cmd)
 		}
 		i++
+	}
+	return log
+}
+
+// IterConcTableOnView ...
+func IterConcTableOnView(tbl *minStateTable) []pb.Command {
+	log := []pb.Command{}
+	for _, st := range *tbl {
+		log = append(log, st.cmd)
 	}
 	return log
 }

@@ -374,8 +374,19 @@ func generateRandStructure(id uint8, n uint64, wrt, dif int, cfg *LogConfig) (St
 		}
 		break
 
+	case 4: // conctable
+		if cfg == nil {
+			st = NewConcTable(context.TODO())
+		} else {
+			st, err = NewConcTableWithConfig(context.TODO(), cfg)
+			if err != nil {
+				return nil, err
+			}
+		}
+		break
+
 	default:
-		return nil, fmt.Errorf("unknow structure '%d' provided", id)
+		return nil, fmt.Errorf("unknow structure '%d' requested", id)
 	}
 
 	for i := uint64(0); i < n; i++ {

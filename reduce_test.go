@@ -209,6 +209,52 @@ func TestCircBuffAlgos(t *testing.T) {
 	}
 }
 
+func TestConcTableAlgos(t *testing.T) {
+	debugOutput := false
+	testCases := []struct {
+		nCmds    uint64
+		pWrts    int
+		diffKeys int
+		alg      Reducer
+	}{
+		{
+			20,
+			100,
+			5,
+			IterConcTable,
+		},
+		{
+			2000,
+			90,
+			1000,
+			IterConcTable,
+		},
+	}
+
+	for i, tc := range testCases {
+		tbl, err := generateRandStructure(4, tc.nCmds, tc.pWrts, tc.diffKeys, nil)
+		if err != nil {
+			t.Log("test num", i, "failed with err:", err.Error())
+			t.FailNow()
+		}
+
+		if debugOutput {
+			t.Log("Init with", tbl.Len(), "commands:\n", tbl.Str())
+		}
+
+		log, err := ApplyReduceAlgo(tbl, tc.alg, 0, tbl.Len())
+		if err != nil {
+			t.Log("test num", i, "failed with err:", err.Error())
+			t.FailNow()
+		}
+
+		t.Log("Removed commands:", tbl.Len()-uint64(len(log)))
+		if debugOutput {
+			t.Log("Reduced Log:\n", log)
+		}
+	}
+}
+
 func BenchmarkAVLTreeAlgos(b *testing.B) {
 	scenarios := []struct {
 		numCmds      uint64
