@@ -26,12 +26,13 @@ func TestStructuresLog(t *testing.T) {
 	lt := NewListHT()
 	arr := NewArrayHT()
 	buf := NewCircBuffHT(context.TODO())
+	ct := NewConcTable(context.TODO())
 
-	for _, st := range []Structure{avl, lt, arr, buf} {
+	for _, st := range []Structure{lt, arr, avl, buf, ct} {
 		// populate some SET commands
 		for i := first; i < n; i++ {
 			// TODO: yeah, I will change this API of index log in time
-			err := st.Log(i, pb.Command{Id: i, Op: pb.Command_SET})
+			err := st.Log(i, pb.Command{Id: i, Op: pb.Command_SET, Key: strconv.Itoa(int(i))})
 			if err != nil {
 				t.Log(err.Error())
 				t.FailNow()
@@ -52,49 +53,73 @@ func TestStructuresLog(t *testing.T) {
 
 		// GET command shouldnt increase size, but modify 'avl.last' index
 		if l != st.Len() {
-			t.Log(l, "commands, expected", n-first)
+			t.Log(l, "commands, expected", st.Len())
 			t.FailNow()
 		}
-	}
 
-	// indexes should be 'first' and 'n', considering n-1 SETS + 1 GET
-	if avl.first != first {
-		t.Log("first cmd index is", avl.first, ", expected", first)
-		t.FailNow()
-	}
-	if avl.last != n {
-		t.Log("last cmd index is", avl.last, ", expected", n)
-		t.FailNow()
-	}
+		switch tp := st.(type) {
+		case *ListHT:
+			if tp.first != first {
+				// indexes should be 'first' and 'n', considering n-1 SETS + 1 GET
+				t.Log("first cmd index is", tp.first, ", expected", first)
+				t.FailNow()
+			}
+			if tp.last != n {
+				t.Log("last cmd index is", tp.last, ", expected", n)
+				t.FailNow()
+			}
+			break
 
-	// same as list indexes
-	if lt.first != first {
-		t.Log("first cmd index is", lt.first, ", expected", first)
-		t.FailNow()
-	}
-	if lt.last != n {
-		t.Log("last cmd index is", lt.last, ", expected", n)
-		t.FailNow()
-	}
+		case *ArrayHT:
+			// cant assign multiple types on the same case statement, since Structure
+			// types are inconvertible between them.
+			if tp.first != first {
+				t.Log("first cmd index is", tp.first, ", expected", first)
+				t.FailNow()
+			}
+			if tp.last != n {
+				t.Log("last cmd index is", tp.last, ", expected", n)
+				t.FailNow()
+			}
+			break
 
-	// same as array
-	if arr.first != first {
-		t.Log("first cmd index is", arr.first, ", expected", first)
-		t.FailNow()
-	}
-	if arr.last != n {
-		t.Log("last cmd index is", arr.last, ", expected", n)
-		t.FailNow()
-	}
+		case *AVLTreeHT:
+			if tp.first != first {
+				t.Log("first cmd index is", tp.first, ", expected", first)
+				t.FailNow()
+			}
+			if tp.last != n {
+				t.Log("last cmd index is", tp.last, ", expected", n)
+				t.FailNow()
+			}
+			break
 
-	// and circular buffer
-	if buf.first != first {
-		t.Log("first cmd index is", buf.first, ", expected", first)
-		t.FailNow()
-	}
-	if buf.last != n {
-		t.Log("last cmd index is", buf.last, ", expected", n)
-		t.FailNow()
+		case *CircBuffHT:
+			if tp.first != first {
+				t.Log("first cmd index is", tp.first, ", expected", first)
+				t.FailNow()
+			}
+			if tp.last != n {
+				t.Log("last cmd index is", tp.last, ", expected", n)
+				t.FailNow()
+			}
+			break
+
+		case *ConcTable:
+			if tp.logs[tp.current].first != first {
+				t.Log("first cmd index is", tp.logs[tp.current].first, ", expected", first)
+				t.FailNow()
+			}
+			if tp.logs[tp.current].last != n {
+				t.Log("last cmd index is", tp.logs[tp.current].last, ", expected", n)
+				t.FailNow()
+			}
+			break
+
+		default:
+			t.Logf("unknown structure type '%T' informed", tp)
+			t.FailNow()
+		}
 	}
 }
 
@@ -165,8 +190,13 @@ func TestStructuresDifferentRecoveries(t *testing.T) {
 			IterCircBuff,
 			cfgs,
 		},
+		{
+			4, // conctable
+			IterConcTable,
+			cfgs,
+		},
 	}
-	structNames := []string{"List", "Array", "AVLTree", "CircBuff"}
+	structNames := []string{"List", "Array", "AVLTree", "CircBuff", "ConcTable"}
 
 	for _, tc := range testCases {
 		for j, cf := range tc.configs {
@@ -174,8 +204,7 @@ func TestStructuresDifferentRecoveries(t *testing.T) {
 			// delete current logstate, if any, in order to avoid conflict on
 			// persistent interval scenarios
 			if cf.Tick == Interval && cf.Fname != "" {
-				err := os.Remove(cf.Fname)
-				if err != nil && os.IsNotExist(err) {
+				if err := resetLogStates(cf.Fname); err != nil {
 					t.Log(err.Error())
 					t.FailNow()
 				}
@@ -203,6 +232,11 @@ func TestStructuresDifferentRecoveries(t *testing.T) {
 			if err != nil {
 				t.Log(err.Error())
 				t.FailNow()
+			}
+
+			// wait for new state attribution on concurrent structures...
+			if tc.structID == 4 {
+				time.Sleep(time.Second)
 			}
 
 			log, err := st.Recov(p, n)
@@ -269,8 +303,13 @@ func TestStructuresRecovBytesInterpretation(t *testing.T) {
 			IterCircBuff,
 			cfgs,
 		},
+		{
+			4, // conctable
+			IterConcTable,
+			cfgs,
+		},
 	}
-	structNames := []string{"List", "Array", "AVLTree", "CircBuff"}
+	structNames := []string{"List", "Array", "AVLTree", "CircBuff", "ConcTable"}
 
 	for _, tc := range testCases {
 		for j, cf := range tc.configs {
@@ -292,6 +331,11 @@ func TestStructuresRecovBytesInterpretation(t *testing.T) {
 			if err != nil {
 				t.Log(err.Error())
 				t.FailNow()
+			}
+
+			// wait for new state attribution on concurrent structures...
+			if tc.structID == 4 {
+				time.Sleep(time.Second)
 			}
 
 			raw, err := st.RecovBytes(p, n)
@@ -483,4 +527,20 @@ func logsAreEquivalent(logA, logB []pb.Command) bool {
 		htB[logB[i].Key] = logB[i].Value
 	}
 	return reflect.DeepEqual(htA, htB)
+}
+
+func resetLogStates(fn string) error {
+	err := os.Remove(fn)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	// reset not only the informed index, but the different view states as well
+	for i := 0; i < concLevel; i++ {
+		err := os.Remove(fn + "." + strconv.Itoa(i))
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
 }

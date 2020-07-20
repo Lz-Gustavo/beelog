@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -37,7 +38,9 @@ func NewConcTable(ctx context.Context) *ConcTable {
 	}
 
 	for i := 0; i < concLevel; i++ {
-		ct.logs[i] = logData{config: DefaultLogConfig()}
+		def := *DefaultLogConfig()
+		def.Fname = def.Fname + "." + strconv.Itoa(i)
+		ct.logs[i] = logData{config: &def}
 		ct.views[i] = make(minStateTable, 0)
 	}
 	go ct.handleReduce(c)
@@ -57,9 +60,10 @@ func NewConcTableWithConfig(ctx context.Context, cfg *LogConfig) (*ConcTable, er
 		reduceReq: make(chan int, chanBuffSize),
 	}
 
-	// TODO: modify log state file names for the different views.
 	for i := 0; i < concLevel; i++ {
-		ct.logs[i] = logData{config: cfg}
+		nCfg := *cfg
+		nCfg.Fname = nCfg.Fname + "." + strconv.Itoa(i)
+		ct.logs[i] = logData{config: &nCfg}
 		ct.views[i] = make(minStateTable, 0)
 	}
 	go ct.handleReduce(c)
@@ -72,11 +76,13 @@ func (ct *ConcTable) Str() string {
 	return ""
 }
 
-// Len returns the length of the current active view.
-//
-// TODO: investigate later.
+// Len returns the length of the current active view. A structure lenght
+// is defined as the number of inserted elements on its underlying container,
+// which disregards read operations. To interpret the absolute number of cmds
+// safely discarded on ConcTable structures, just compute:
+//   ct.logs[ct.current].last - ct.logs[ct.current].first + 1
 func (ct *ConcTable) Len() uint64 {
-	return ct.logs[ct.current].last - ct.logs[ct.current].first
+	return uint64(len(ct.views[ct.current]))
 }
 
 // Log records the occurence of command 'cmd' on the provided index.
@@ -89,8 +95,6 @@ func (ct *ConcTable) Log(index uint64, cmd pb.Command) error {
 	var wrt bool
 
 	ct.mu[cur].Lock()
-	defer ct.mu[cur].Unlock()
-
 	if cmd.Op != pb.Command_SET {
 		// TODO: treat 'ar.first' attribution on GETs
 		ct.logs[cur].last = index
@@ -117,6 +121,7 @@ func (ct *ConcTable) Log(index uint64, cmd pb.Command) error {
 		// adjust last index once inserted
 		ct.logs[cur].last = cmd.Id
 	}
+	ct.mu[cur].Unlock()
 
 	// trigger immediately reduce on view
 	if wrt && ct.logs[cur].config.Tick == Immediately {
@@ -202,8 +207,6 @@ func (ct *ConcTable) handleReduce(ctx context.Context) {
 
 		case cur := <-ct.reduceReq:
 			ct.mu[cur].Lock()
-			defer ct.mu[cur].Unlock()
-
 			err := ct.ReduceLog(cur)
 			if err != nil {
 				log.Fatalln("failed during reduce procedure, err:", err.Error())
@@ -213,6 +216,7 @@ func (ct *ConcTable) handleReduce(ctx context.Context) {
 			atomic.StoreInt32(&ct.prevLog, int32(cur))
 
 			// TODO: clean 'cur' view state
+			ct.mu[cur].Unlock()
 		}
 	}
 }

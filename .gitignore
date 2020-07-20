@@ -1,3 +1,4 @@
 beelog
 sim/sim
 *.out
+*.out.*
