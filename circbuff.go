@@ -97,7 +97,7 @@ func (cb *CircBuffHT) Str() string {
 	i := 0
 	for i < cb.len {
 		// negative values already account circular reference
-		pos := (cb.cur - cb.len + i) % cb.cap
+		pos := modInt((cb.cur - cb.len + i), cb.cap)
 		v := (*cb.buff)[pos]
 		strs = append(strs, fmt.Sprintf("%v->", v))
 		i++
@@ -148,7 +148,7 @@ func (cb *CircBuffHT) Log(index uint64, cmd pb.Command) error {
 		(*cb.buff)[cb.cur] = entry
 
 		// update insert cursor
-		cb.cur = (cb.cur + 1) % cb.cap
+		cb.cur = modInt(cb.cur+1, cb.cap)
 
 		// adjust last index and len once inserted
 		cb.last = index

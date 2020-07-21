@@ -52,10 +52,11 @@ func TestListAlgos(t *testing.T) {
 			t.FailNow()
 		}
 
-		t.Log("Removed commands:", l.Len()-uint64(len(log)))
 		if debugOutput {
 			t.Log("Reduced Log:\n", log)
+			t.Log("Removed commands:", l.Len()-uint64(len(log)))
 		}
+		// TODO: implement a validation procedure...
 	}
 }
 
@@ -98,14 +99,16 @@ func TestArrayAlgos(t *testing.T) {
 			t.FailNow()
 		}
 
-		t.Log("Removed commands:", ar.Len()-uint64(len(log)))
 		if debugOutput {
 			t.Log("Reduced Log:\n", log)
+			t.Log("Removed commands:", ar.Len()-uint64(len(log)))
 		}
+		// TODO: implement a validation procedure...
 	}
 }
 
 func TestAVLTreeAlgos(t *testing.T) {
+	debugOutput := false
 	testCases := []struct {
 		numCmds      uint64
 		writePercent int
@@ -135,31 +138,47 @@ func TestAVLTreeAlgos(t *testing.T) {
 			t.Log(err.Error())
 			t.FailNow()
 		}
-		t.Logf("Tree structure:\n %s \n", avl.Str())
+		if debugOutput {
+			t.Logf("Tree structure:\n %s \n", avl.Str())
+		}
 
 		log, err = ApplyReduceAlgo(avl, GreedyAvl, tc.p, tc.n)
 		if err != nil {
 			t.Log(err.Error())
 			t.FailNow()
 		}
-		t.Logf("GreedyAvl log:\n %v \n", log)
-		t.Log("Removed", tc.numCmds-uint64(len(log)), "comands")
+		greedyRmv := tc.numCmds - uint64(len(log))
+		if debugOutput {
+			t.Logf("GreedyAvl log:\n %v \n", log)
+			t.Log("Removed", greedyRmv, "comands")
+		}
 
 		log, err = ApplyReduceAlgo(avl, IterBFSAvl, tc.p, tc.n)
 		if err != nil {
 			t.Log(err.Error())
 			t.FailNow()
 		}
-		t.Logf("IterBFSAvl log:\n %v \n", log)
-		t.Log("Removed", tc.numCmds-uint64(len(log)), "comands")
+		bfsRmv := tc.numCmds - uint64(len(log))
+		if debugOutput {
+			t.Logf("IterBFSAvl log:\n %v \n", log)
+			t.Log("Removed", bfsRmv, "comands")
+		}
 
 		log, err = ApplyReduceAlgo(avl, IterDFSAvl, tc.p, tc.n)
 		if err != nil {
 			t.Log(err.Error())
 			t.FailNow()
 		}
-		t.Logf("IterDFSAvl log:\n %v \n", log)
-		t.Log("Removed", tc.numCmds-uint64(len(log)), "comands")
+		dfsRmv := tc.numCmds - uint64(len(log))
+		if debugOutput {
+			t.Logf("IterDFSAvl log:\n %v \n", log)
+			t.Log("Removed", dfsRmv, "comands")
+		}
+
+		if greedyRmv != bfsRmv || greedyRmv != dfsRmv || bfsRmv != dfsRmv {
+			t.Log("Different algorithms presented different results, incoherent")
+			t.FailNow()
+		}
 	}
 }
 
@@ -202,10 +221,11 @@ func TestCircBuffAlgos(t *testing.T) {
 			t.FailNow()
 		}
 
-		t.Log("Removed commands:", buf.Len()-uint64(len(log)))
 		if debugOutput {
 			t.Log("Reduced Log:\n", log)
+			t.Log("Removed commands:", buf.Len()-uint64(len(log)))
 		}
+		// TODO: implement a validation procedure...
 	}
 }
 
@@ -248,10 +268,11 @@ func TestConcTableAlgos(t *testing.T) {
 			t.FailNow()
 		}
 
-		t.Log("Removed commands:", tbl.Len()-uint64(len(log)))
 		if debugOutput {
 			t.Log("Reduced Log:\n", log)
+			t.Log("Removed commands:", tbl.Len()-uint64(len(log)))
 		}
+		// TODO: implement a validation procedure...
 	}
 }
 

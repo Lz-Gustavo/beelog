@@ -376,9 +376,9 @@ func IterCircBuffHT(cp *buffCopy) []pb.Command {
 	for i < (*cp).len {
 		// negative values already account circular reference. In order to change
 		// order (oldest cmmd first), just switch to:
-		//   pos := (cur - len + i) % cap
+		//   pos := modInt((cur - len + i), cap)
 
-		pos := ((*cp).cur - 1 - i) % (*cp).cap
+		pos := modInt(((*cp).cur - 1 - i), (*cp).cap)
 		ent := (*cp).buf[pos]
 		st := (*cp).tbl[ent.key]
 

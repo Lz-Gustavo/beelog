@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	// maximum of 'concLevel' + 1 different views of the same structure
+	// maximum of 'concLevel' different views of the same structure
 	concLevel int = 2
 )
 
@@ -87,15 +87,21 @@ func (ct *ConcTable) Len() uint64 {
 
 // Log records the occurence of command 'cmd' on the provided index.
 func (ct *ConcTable) Log(index uint64, cmd pb.Command) error {
+	wrt := cmd.Op == pb.Command_SET
+	var willReduce bool
+
 	ct.curMu.Lock()
 	cur := ct.current
+
+	willReduce = ct.willRequireReduceOnView(wrt, cur)
+	if willReduce {
+		ct.advanceCurrentView()
+	}
 	ct.curMu.Unlock()
 
 	tbl := ct.views[cur]
-	var wrt bool
-
 	ct.mu[cur].Lock()
-	if cmd.Op != pb.Command_SET {
+	if !wrt {
 		// TODO: treat 'ar.first' attribution on GETs
 		ct.logs[cur].last = index
 
@@ -123,13 +129,9 @@ func (ct *ConcTable) Log(index uint64, cmd pb.Command) error {
 	}
 	ct.mu[cur].Unlock()
 
-	// trigger immediately reduce on view
-	if wrt && ct.logs[cur].config.Tick == Immediately {
+	if willReduce {
 		ct.reduceReq <- cur
 	}
-
-	// Delayed config will be ignored
-	ct.mayTriggerReduceOnView(cur)
 	return nil
 }
 
@@ -215,23 +217,27 @@ func (ct *ConcTable) handleReduce(ctx context.Context) {
 			// update the last reduced index
 			atomic.StoreInt32(&ct.prevLog, int32(cur))
 
-			// TODO: clean 'cur' view state
+			// clean 'cur' view state
+			ct.resetViewState(cur)
 			ct.mu[cur].Unlock()
 		}
 	}
 }
 
 // readAndAdvanceCurrentView reads the current view id then advances it to the next
-// available identifier, returning the old observed value. Safe to be called concurrently.
+// available identifier, returning the old observed value.
 func (ct *ConcTable) readAndAdvanceCurrentView() int {
 	ct.curMu.Lock()
 	cur := ct.current
-
-	// advance current state for next insertions
-	num := concLevel + 1
-	ct.current = (ct.current - num + 1) % num
+	ct.advanceCurrentView()
 	ct.curMu.Unlock()
 	return cur
+}
+
+// advanceCurrentView advances the current view to its next id.
+func (ct *ConcTable) advanceCurrentView() {
+	d := (ct.current - concLevel + 1)
+	ct.current = modInt(d, concLevel)
 }
 
 // mayTriggerReduceOnView possibly triggers the reduce algorithm over the informed view
@@ -248,6 +254,26 @@ func (ct *ConcTable) mayTriggerReduceOnView(id int) {
 		// trigger reduce on view
 		ct.reduceReq <- id
 	}
+}
+
+func (ct *ConcTable) willRequireReduceOnView(wrt bool, id int) bool {
+	// write operation and immediately config
+	if wrt && ct.logs[id].config.Tick == Immediately {
+		return true
+	}
+
+	// read on immediately or delayed config, wont need reduce
+	if ct.logs[id].config.Tick != Interval {
+		return false
+	}
+	ct.logs[id].count++
+
+	// reached reduce period
+	if ct.logs[id].count >= ct.logs[id].config.Period {
+		ct.logs[id].count = 0
+		return true
+	}
+	return false
 }
 
 // mayExecuteLazyReduce triggers a reduce procedure if delayed config is set or first
@@ -284,6 +310,16 @@ func (ct *ConcTable) willRequireCopy() bool {
 	return false
 }
 
+// resetViewState cleans the current state of the informed view. Must be called from mutual
+// exclusion scope.
+func (ct *ConcTable) resetViewState(id int) {
+	ct.views[id] = make(minStateTable, 0)
+
+	// reset log data
+	ct.logs[id].first, ct.logs[id].last = 0, 0
+	ct.logs[id].logged = false
+}
+
 // executeReduceAlgOnView applies the configured reduce algorithm on a conflict-free view,
 // mutual exclusion is done by outer scope.
 func (ct *ConcTable) executeReduceAlgOnView(id int) ([]pb.Command, error) {
@@ -297,4 +333,15 @@ func (ct *ConcTable) executeReduceAlgOnView(id int) ([]pb.Command, error) {
 // Shutdown ...
 func (ct *ConcTable) Shutdown() {
 	ct.canc()
+}
+
+// computes the modulu operation, returning the dividend signal result. In all cases
+// b is ALWAYS a non-negative constant, which allows a minor optimization (one less
+// comparison for b signal).
+func modInt(a, b int) int {
+	a = a % b
+	if a >= 0 {
+		return a
+	}
+	return a + b
 }
