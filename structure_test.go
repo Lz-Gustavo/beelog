@@ -124,15 +124,17 @@ func TestStructuresLog(t *testing.T) {
 }
 
 func TestStructuresDifferentRecoveries(t *testing.T) {
-	// Requesting the last matching index (i.e. n == nCmds) is mandatory
-	// on Immediately and Interval configurations.
+	// Requesting the last matching index (i.e. n == nCmds) is mandatory on Immediately
+	// and Interval configurations.
 	nCmds, wrt, dif := uint64(2000), 50, 10
 	p, n := uint64(10), uint64(2000)
 
-	// For now, interval config is intentionally delayed to allow a state
-	// comparison between the different routines.
+	// Interval config is intentionally delayed (i.e. the number of cmds is always less
+	// than reduce period) to allow a state comparison between the different routines.
+	// The same is required on ConcTable's Immediately config, the number of tested cmds
+	// is always less than 'resetOnImmediately' const.
 	//
-	// TODO: Implement an exclusive test procedure for intervalar reduce.
+	// TODO: Later implement an exclusive test procedure for these scenarios.
 	cfgs := []LogConfig{
 		{ // immediately inmem
 			Tick:  Immediately,
@@ -226,12 +228,6 @@ func TestStructuresDifferentRecoveries(t *testing.T) {
 				t.FailNow()
 			}
 			t.Log("===Executing", structNames[tc.structID], "Test Case #", j)
-
-			// TODO: Ignore immediately config on ConcTable, investigate later
-			if tc.structID == 4 && cf.Tick == Immediately {
-				t.Log("TEMPORARILY ignoring", structNames[4], "Test Case #", j, "...")
-				continue
-			}
 
 			// the compacted log used for later comparison
 			redLog, err := ApplyReduceAlgo(st, cf.Alg, p, n)

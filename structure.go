@@ -171,6 +171,31 @@ func (ld *logData) updateLogState(lg []pb.Command, p, n uint64) error {
 	return nil
 }
 
+func (ld *logData) appendToLogState(lg []pb.Command, p, n uint64) error {
+	if ld.config.Inmem {
+		for _, c := range lg {
+			*ld.recentLog = append(*ld.recentLog, c)
+		}
+		return nil
+	}
+
+	// update the current state at ld.config.Fname
+	fd, err := os.OpenFile(ld.config.Fname, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer fd.Close()
+
+	if err = UpdateLogIndexesInFile(fd, p, n); err != nil {
+		return err
+	}
+
+	if err = MarshalAndAppendIntoWriter(fd, &lg); err != nil {
+		return err
+	}
+	return nil
+}
+
 // firstReduceExists is execute on Interval tick config, and checks if a ReduceLog
 // procedure was already executed. False is returned if no recent reduced state is
 // found (i.e. first 'ld.config.Period' wasnt reached yet).
@@ -203,7 +228,9 @@ func RetainLogInterval(log *[]pb.Command, p, n uint64) []pb.Command {
 	return cmds
 }
 
-// UnmarshalLogFromReader ...
+// UnmarshalLogFromReader returns the entire log contained at 'logRd', interpreting commands
+// from the byte stream following a simple slicing protocol, where the size of each command
+// is binary encoded before each raw pbuff.
 func UnmarshalLogFromReader(logRd io.Reader) ([]pb.Command, error) {
 	// read the retrieved log interval
 	var f, l uint64
@@ -240,8 +267,10 @@ func UnmarshalLogFromReader(logRd io.Reader) ([]pb.Command, error) {
 	return cmds, nil
 }
 
-// MarshalLogIntoWriter ... describe the slicing protocol for logs and protobuffs
-// on disk (delimiters, binary size, raw cmd)
+// MarshalLogIntoWriter records the provided log indexes into 'logWr' writer, then marshals
+// the entire command log following a simple serialization procedure where the size of
+// each command is binary encoded before the raw pbuff. Commands are marshaled and written to
+// 'logWr' one by one.
 func MarshalLogIntoWriter(logWr io.Writer, log *[]pb.Command, p, n uint64) error {
 	// write requested delimiters for the current state
 	_, err := fmt.Fprintf(logWr, "%d\n%d\n", p, n)
@@ -269,9 +298,54 @@ func MarshalLogIntoWriter(logWr io.Writer, log *[]pb.Command, p, n uint64) error
 	return nil
 }
 
-// UpdateLogIndexesInWriter ...
-func UpdateLogIndexesInWriter(logWr io.Writer, p, n uint64) error {
-	// TODO: update indexes without having to unmarshal and marshal again the
-	// entire byte sequence
+// MarshalAndAppendIntoWriter marshals the entire command log following a simple serialization
+// procedure where the size of each command is binary encoded before the raw pbuff. After
+// serialization the entire byte sequence is appended to 'logWr' on a single call.
+func MarshalAndAppendIntoWriter(logWr io.WriteSeeker, log *[]pb.Command) error {
+	buff := bytes.NewBuffer(nil)
+	for _, c := range *log {
+		raw, err := proto.Marshal(&c)
+		if err != nil {
+			return err
+		}
+
+		// writing size of each serialized message as streaming delimiter
+		err = binary.Write(buff, binary.BigEndian, int32(len(raw)))
+		if err != nil {
+			return err
+		}
+
+		_, err = buff.Write(raw)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err := logWr.Seek(0, io.SeekEnd)
+	if err != nil {
+		return err
+	}
+
+	if _, err = buff.WriteTo(logWr); err != nil {
+		return err
+	}
+	return nil
+}
+
+// UpdateLogIndexesInFile updates the persistent log indexes without unmarshaling then marshaling
+// the entire sequence. Recognizes the following format (single quotes (') chars not present):
+//   'p index'\n
+//   'n index'\n
+//   'log...'
+func UpdateLogIndexesInFile(fd *os.File, p, n uint64) error {
+	_, err := fd.Seek(0, io.SeekStart)
+	if err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprintf(fd, "%d\n%d\n", p, n)
+	if err != nil {
+		return err
+	}
 	return nil
 }

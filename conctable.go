@@ -12,8 +12,12 @@ import (
 )
 
 const (
-	// maximum of 'concLevel' different views of the same structure
+	// maximum of 'concLevel' different views of the same structure.
 	concLevel int = 2
+
+	// number of commands to wait until a complete state reset for Immediately
+	// reduce period.
+	resetOnImmediately int = 4000
 )
 
 // ConcTable ...
@@ -88,13 +92,11 @@ func (ct *ConcTable) Len() uint64 {
 // Log records the occurence of command 'cmd' on the provided index.
 func (ct *ConcTable) Log(index uint64, cmd pb.Command) error {
 	wrt := cmd.Op == pb.Command_SET
-	var willReduce bool
-
 	ct.curMu.Lock()
 	cur := ct.current
 
-	willReduce = ct.willRequireReduceOnView(wrt, cur)
-	if willReduce {
+	willReduce, advance := ct.willRequireReduceOnView(wrt, cur)
+	if advance {
 		ct.advanceCurrentView()
 	}
 	ct.curMu.Unlock()
@@ -191,8 +193,8 @@ func (ct *ConcTable) RecovBytes(p, n uint64) ([]byte, error) {
 	return ct.logs[prev].retrieveRawLog(ct.logs[prev].first, ct.logs[prev].last)
 }
 
-// ReduceLog applies the configured algorithm on a different copy and
-// updates the lates log state.
+// ReduceLog applies the configured algorithm on a specific view and updates
+// the lates log state into a new file.
 func (ct *ConcTable) ReduceLog(id int) error {
 	cmds, err := ct.executeReduceAlgOnView(id)
 	if err != nil {
@@ -202,6 +204,7 @@ func (ct *ConcTable) ReduceLog(id int) error {
 }
 
 func (ct *ConcTable) handleReduce(ctx context.Context) {
+	var count int
 	for {
 		select {
 		case <-ctx.Done():
@@ -212,6 +215,16 @@ func (ct *ConcTable) handleReduce(ctx context.Context) {
 			err := ct.ReduceLog(cur)
 			if err != nil {
 				log.Fatalln("failed during reduce procedure, err:", err.Error())
+			}
+
+			// always log, but reset persistent state only after 'resetOnImmediately' cmds
+			if ct.logs[cur].config.Tick == Immediately {
+				count++
+				if count < resetOnImmediately {
+					ct.mu[cur].Unlock()
+					continue
+				}
+				count = 0
 			}
 
 			// update the last reduced index
@@ -256,24 +269,28 @@ func (ct *ConcTable) mayTriggerReduceOnView(id int) {
 	}
 }
 
-func (ct *ConcTable) willRequireReduceOnView(wrt bool, id int) bool {
+// willRequireReduceOnView informs if a reduce procedure will later be trigged on a log procedure,
+// and if the current view cursor must be advanced, following some specific rules:
+//
+// TODO: describe later...
+func (ct *ConcTable) willRequireReduceOnView(wrt bool, id int) (bool, bool) {
 	// write operation and immediately config
 	if wrt && ct.logs[id].config.Tick == Immediately {
-		return true
+		return true, false
 	}
 
 	// read on immediately or delayed config, wont need reduce
 	if ct.logs[id].config.Tick != Interval {
-		return false
+		return false, false
 	}
 	ct.logs[id].count++
 
 	// reached reduce period
 	if ct.logs[id].count >= ct.logs[id].config.Period {
 		ct.logs[id].count = 0
-		return true
+		return true, true
 	}
-	return false
+	return false, false
 }
 
 // mayExecuteLazyReduce triggers a reduce procedure if delayed config is set or first
@@ -303,11 +320,6 @@ func (ct *ConcTable) retrieveCurrentViewCopy() minStateTable {
 	ct.curMu.Lock()
 	defer ct.curMu.Unlock()
 	return ct.views[ct.current]
-}
-
-func (ct *ConcTable) willRequireCopy() bool {
-	// TODO: i dont remember why ive declared it...
-	return false
 }
 
 // resetViewState cleans the current state of the informed view. Must be called from mutual
