@@ -103,13 +103,13 @@ func (ct *ConcTable) Log(index uint64, cmd pb.Command) error {
 
 	tbl := ct.views[cur]
 	ct.mu[cur].Lock()
-	if !wrt {
-		// TODO: treat 'ar.first' attribution on GETs
-		ct.logs[cur].last = index
+	// adjust first structure index
+	if !ct.logs[cur].logged {
+		ct.logs[cur].first = index
+		ct.logs[cur].logged = true
+	}
 
-	} else {
-		wrt = true
-
+	if wrt {
 		// TODO: Ensure same index for now. Log API will change in time
 		cmd.Id = index
 
@@ -119,16 +119,9 @@ func (ct *ConcTable) Log(index uint64, cmd pb.Command) error {
 			cmd: cmd,
 		}
 		tbl[cmd.Key] = st
-
-		// adjust first structure index
-		if !ct.logs[cur].logged {
-			ct.logs[cur].first = cmd.Id
-			ct.logs[cur].logged = true
-		}
-
-		// adjust last index once inserted
-		ct.logs[cur].last = cmd.Id
 	}
+	// adjust last index
+	ct.logs[cur].last = index
 	ct.mu[cur].Unlock()
 
 	if willReduce {
