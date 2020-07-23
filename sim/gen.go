@@ -67,13 +67,13 @@ func ListGen(n, wrt, dif int) (bl.Structure, error) {
 	for i := 0; i < n; i++ {
 		if cn := r.Intn(100); cn < wrt {
 			cmd := pb.Command{
+				Id:    uint64(n - 1 - i),
 				Key:   strconv.Itoa(r.Intn(dif)),
 				Value: strconv.Itoa(r.Int()),
 				Op:    pb.Command_SET,
 			}
-
 			// the list is represented on the oposite order
-			l.Log(uint64(n-1-i), cmd)
+			l.Log(cmd)
 
 		} else {
 			continue
@@ -92,12 +92,13 @@ func AVLTreeHTGen(n, wrt, dif int) (bl.Structure, error) {
 		// only WRITE operations are recorded on the tree
 		if cn := r.Intn(100); cn < wrt {
 			cmd := pb.Command{
+				Id:    uint64(i),
 				Key:   strconv.Itoa(r.Intn(dif)),
 				Value: strconv.Itoa(r.Int()),
 				Op:    pb.Command_SET,
 			}
 
-			err := avl.Log(uint64(i), cmd)
+			err := avl.Log(cmd)
 			if err != nil {
 				return nil, err
 			}
@@ -142,8 +143,8 @@ func AVLTreeHTConst(fn string) (bl.Structure, int, error) {
 	avl := bl.NewAVLTreeHT()
 
 	for i, cmd := range log {
-
-		err := avl.Log(uint64(i), cmd)
+		cmd.Id = uint64(i)
+		err := avl.Log(cmd)
 		if err != nil {
 			return nil, 0, err
 		}

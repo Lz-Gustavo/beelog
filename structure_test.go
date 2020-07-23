@@ -31,8 +31,7 @@ func TestStructuresLog(t *testing.T) {
 	for _, st := range []Structure{lt, arr, avl, buf, ct} {
 		// populate some SET commands
 		for i := first; i < n; i++ {
-			// TODO: yeah, I will change this API of index log in time
-			err := st.Log(i, pb.Command{Id: i, Op: pb.Command_SET, Key: strconv.Itoa(int(i))})
+			err := st.Log(pb.Command{Id: i, Op: pb.Command_SET, Key: strconv.Itoa(int(i))})
 			if err != nil {
 				t.Log(err.Error())
 				t.FailNow()
@@ -45,7 +44,7 @@ func TestStructuresLog(t *testing.T) {
 		}
 
 		// log another GET
-		err := st.Log(n, pb.Command{Id: n, Op: pb.Command_GET})
+		err := st.Log(pb.Command{Id: n, Op: pb.Command_GET})
 		if err != nil {
 			t.Log(err.Error())
 			t.FailNow()
@@ -460,7 +459,7 @@ func generateRandStructure(id uint8, n uint64, wrt, dif int, cfg *LogConfig) (St
 				Op: pb.Command_GET,
 			}
 		}
-		err = st.Log(i, cmd)
+		err = st.Log(cmd)
 		if err != nil {
 			return nil, err
 		}

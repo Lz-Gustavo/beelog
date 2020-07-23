@@ -68,27 +68,24 @@ func (l *ListHT) Len() uint64 {
 // Log records the occurence of command 'cmd' on the provided index. Writes are
 // mapped as a new node on the underlying liked list, with a pointer to the newly
 // inserted state update on the update list for its particular key.
-func (l *ListHT) Log(index uint64, cmd pb.Command) error {
+func (l *ListHT) Log(cmd pb.Command) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	if cmd.Op != pb.Command_SET {
 		// TODO: treat 'l.first' attribution on GETs
-		l.last = index
+		l.last = cmd.Id
 		return l.mayTriggerReduce()
 	}
 
-	// TODO: Ensure same index for now. Log API will change in time
-	cmd.Id = index
-
 	entry := &listEntry{
-		ind: index,
+		ind: cmd.Id,
 		key: cmd.Key,
 	}
 
 	// a write cmd always references a new state on the aux hash table
 	st := &State{
-		ind: index,
+		ind: cmd.Id,
 		cmd: cmd,
 	}
 
@@ -110,7 +107,7 @@ func (l *ListHT) Log(index uint64, cmd pb.Command) error {
 	l.lt.push(entry)
 
 	// adjust last index once inserted
-	l.last = index
+	l.last = cmd.Id
 
 	// immediately recovery entirely reduces the log to its minimal format
 	if l.config.Tick == Immediately {

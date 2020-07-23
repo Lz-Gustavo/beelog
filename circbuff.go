@@ -113,28 +113,24 @@ func (cb *CircBuffHT) Len() uint64 {
 // Log records the occurence of command 'cmd' on the provided index. Writes are
 // mapped as a new node on the buffer array, with a pointer to the newly inserted
 // state update on the update list for its particular key.
-func (cb *CircBuffHT) Log(index uint64, cmd pb.Command) error {
+func (cb *CircBuffHT) Log(cmd pb.Command) error {
 	cb.mu.Lock()
 	var wrt bool
 
 	if cmd.Op != pb.Command_SET {
 		// TODO: treat 'ar.first' attribution on GETs
-		cb.last = index
+		cb.last = cmd.Id
 
 	} else {
 		wrt = true
-
-		// TODO: Ensure same index for now. Log API will change in time
-		cmd.Id = index
-
 		entry := buffEntry{
-			ind: index,
+			ind: cmd.Id,
 			key: cmd.Key,
 		}
 
 		// update current state for that particular key
 		st := State{
-			ind: index,
+			ind: cmd.Id,
 			cmd: cmd,
 		}
 		(*cb.aux)[cmd.Key] = st
@@ -151,7 +147,7 @@ func (cb *CircBuffHT) Log(index uint64, cmd pb.Command) error {
 		cb.cur = modInt(cb.cur+1, cb.cap)
 
 		// adjust last index and len once inserted
-		cb.last = index
+		cb.last = cmd.Id
 		cb.len++
 	}
 

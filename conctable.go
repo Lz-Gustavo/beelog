@@ -90,7 +90,7 @@ func (ct *ConcTable) Len() uint64 {
 }
 
 // Log records the occurence of command 'cmd' on the provided index.
-func (ct *ConcTable) Log(index uint64, cmd pb.Command) error {
+func (ct *ConcTable) Log(cmd pb.Command) error {
 	wrt := cmd.Op == pb.Command_SET
 	ct.curMu.Lock()
 	cur := ct.current
@@ -105,23 +105,20 @@ func (ct *ConcTable) Log(index uint64, cmd pb.Command) error {
 	ct.mu[cur].Lock()
 	// adjust first structure index
 	if !ct.logs[cur].logged {
-		ct.logs[cur].first = index
+		ct.logs[cur].first = cmd.Id
 		ct.logs[cur].logged = true
 	}
 
 	if wrt {
-		// TODO: Ensure same index for now. Log API will change in time
-		cmd.Id = index
-
 		// update current state for that particular key
 		st := State{
-			ind: index,
+			ind: cmd.Id,
 			cmd: cmd,
 		}
 		tbl[cmd.Key] = st
 	}
 	// adjust last index
-	ct.logs[cur].last = index
+	ct.logs[cur].last = cmd.Id
 	ct.mu[cur].Unlock()
 
 	if willReduce {

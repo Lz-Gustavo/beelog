@@ -85,27 +85,24 @@ func (av *AVLTreeHT) Len() uint64 {
 // Log records the occurence of command 'cmd' on the provided index. Writes are
 // mapped into a new node on the AVL tree, with a pointer to the newly inserted
 // state update on the update list for its particular key.
-func (av *AVLTreeHT) Log(index uint64, cmd pb.Command) error {
+func (av *AVLTreeHT) Log(cmd pb.Command) error {
 	av.mu.Lock()
 	defer av.mu.Unlock()
 
 	if cmd.Op != pb.Command_SET {
 		// TODO: treat 'av.first' attribution on GETs
-		av.last = index
+		av.last = cmd.Id
 		return av.mayTriggerReduce()
 	}
 
-	// TODO: Ensure same index for now. Log API will change in time
-	cmd.Id = index
-
 	entry := &avlTreeEntry{
-		ind: index,
+		ind: cmd.Id,
 		key: cmd.Key,
 	}
 
 	// a write cmd always references a new state on the aux hash table
 	st := &State{
-		ind: index,
+		ind: cmd.Id,
 		cmd: cmd,
 	}
 
@@ -124,7 +121,7 @@ func (av *AVLTreeHT) Log(index uint64, cmd pb.Command) error {
 	}
 
 	// adjust last index once inserted
-	av.last = index
+	av.last = cmd.Id
 
 	// Immediately recovery entirely reduces the log to its minimal format
 	if av.config.Tick == Immediately {

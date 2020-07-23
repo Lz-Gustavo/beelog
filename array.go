@@ -68,27 +68,24 @@ func (ar *ArrayHT) Len() uint64 {
 // Log records the occurence of command 'cmd' on the provided index. Writes are
 // mapped as a new node on the underlying array, with a pointer to the newly inserted
 // state update on the update list for its particular key.
-func (ar *ArrayHT) Log(index uint64, cmd pb.Command) error {
+func (ar *ArrayHT) Log(cmd pb.Command) error {
 	ar.mu.Lock()
 	defer ar.mu.Unlock()
 
 	if cmd.Op != pb.Command_SET {
 		// TODO: treat 'ar.first' attribution on GETs
-		ar.last = index
+		ar.last = cmd.Id
 		return ar.mayTriggerReduce()
 	}
 
-	// TODO: Ensure same index for now. Log API will change in time
-	cmd.Id = index
-
 	entry := listEntry{
-		ind: index,
+		ind: cmd.Id,
 		key: cmd.Key,
 	}
 
 	// a write cmd always references a new state on the aux hash table
 	st := &State{
-		ind: index,
+		ind: cmd.Id,
 		cmd: cmd,
 	}
 
@@ -103,14 +100,14 @@ func (ar *ArrayHT) Log(index uint64, cmd pb.Command) error {
 
 	// adjust first structure index
 	if ar.Len() == 0 {
-		ar.first = entry.ind
+		ar.first = cmd.Id
 	}
 
 	// insert new entry on the main list
 	*ar.arr = append(*ar.arr, entry)
 
 	// adjust last index once inserted
-	ar.last = index
+	ar.last = cmd.Id
 
 	// immediately recovery entirely reduces the log to its minimal format
 	if ar.config.Tick == Immediately {

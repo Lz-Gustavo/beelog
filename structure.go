@@ -18,7 +18,7 @@ import (
 type Structure interface {
 	Str() string
 	Len() uint64
-	Log(index uint64, cmd pb.Command) error
+	Log(cmd pb.Command) error
 	Recov(p, n uint64) ([]pb.Command, error)
 	RecovBytes(p, n uint64) ([]byte, error)
 }

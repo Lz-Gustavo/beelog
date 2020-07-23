@@ -374,6 +374,7 @@ func createRandomLog(n uint64, dif, wrt int, out chan<- pb.Command) {
 
 	for i := uint64(0); i < n; i++ {
 		cmd := pb.Command{
+			Id:  i,
 			Key: strconv.Itoa(r.Intn(dif)),
 		}
 
@@ -423,7 +424,7 @@ func runAlgorithm(alg Reducer, log <-chan pb.Command, n uint64, mu *sync.Mutex, 
 			}
 
 			if i < n {
-				avl.Log(i, cmd)
+				avl.Log(cmd)
 				i++
 
 			} else {
