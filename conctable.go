@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -43,7 +44,7 @@ func NewConcTable(ctx context.Context) *ConcTable {
 
 	for i := 0; i < concLevel; i++ {
 		def := *DefaultLogConfig()
-		def.Fname = def.Fname + "." + strconv.Itoa(i)
+		def.Fname = applyConcIndexInFname(def.Fname, i)
 		ct.logs[i] = logData{config: &def}
 		ct.views[i] = make(minStateTable, 0)
 	}
@@ -66,7 +67,7 @@ func NewConcTableWithConfig(ctx context.Context, cfg *LogConfig) (*ConcTable, er
 
 	for i := 0; i < concLevel; i++ {
 		nCfg := *cfg
-		nCfg.Fname = nCfg.Fname + "." + strconv.Itoa(i)
+		nCfg.Fname = applyConcIndexInFname(nCfg.Fname, i)
 		ct.logs[i] = logData{config: &nCfg}
 		ct.views[i] = make(minStateTable, 0)
 	}
@@ -119,10 +120,12 @@ func (ct *ConcTable) Log(cmd pb.Command) error {
 	}
 	// adjust last index
 	ct.logs[cur].last = cmd.Id
-	ct.mu[cur].Unlock()
 
 	if willReduce {
+		// mutext must be later unlocked by the reduce routine
 		ct.reduceReq <- cur
+	} else {
+		ct.mu[cur].Unlock()
 	}
 	return nil
 }
@@ -137,8 +140,6 @@ func (ct *ConcTable) Recov(p, n uint64) ([]pb.Command, error) {
 		return nil, errors.New("invalid interval request, 'n' must be >= 'p'")
 	}
 	cur := ct.readAndAdvanceCurrentView()
-	ct.mu[cur].Lock()
-	defer ct.mu[cur].Unlock()
 
 	// sequentially reduce since 'Recov' will already be called concurrently
 	exec, err := ct.mayExecuteLazyReduce(cur)
@@ -146,13 +147,25 @@ func (ct *ConcTable) Recov(p, n uint64) ([]pb.Command, error) {
 		return nil, err
 	}
 
-	// executed a lazy reduce, must read from the 'cur' log
+	var cmds []pb.Command
 	if exec {
-		return ct.logs[cur].retrieveLog()
+		defer ct.mu[cur].Unlock()
+
+		// executed a lazy reduce, must read from the 'cur' log
+		cmds, err = ct.logs[cur].retrieveLog()
+		if err != nil {
+			return nil, err
+		}
+
+	} else {
+		// didnt execute, must read from the previous log cursor
+		prev := atomic.LoadInt32(&ct.prevLog)
+		cmds, err = ct.logs[prev].retrieveLog()
+		if err != nil {
+			return nil, err
+		}
 	}
-	// didnt execute, must read from the previous log cursor
-	prev := atomic.LoadInt32(&ct.prevLog)
-	return ct.logs[prev].retrieveLog()
+	return cmds, nil
 }
 
 // RecovBytes returns an already serialized log, parsed from persistent storage
@@ -165,8 +178,6 @@ func (ct *ConcTable) RecovBytes(p, n uint64) ([]byte, error) {
 		return nil, errors.New("invalid interval request, 'n' must be >= 'p'")
 	}
 	cur := ct.readAndAdvanceCurrentView()
-	ct.mu[cur].Lock()
-	defer ct.mu[cur].Unlock()
 
 	// sequentially reduce since 'Recov' will already be called concurrently
 	exec, err := ct.mayExecuteLazyReduce(cur)
@@ -174,13 +185,30 @@ func (ct *ConcTable) RecovBytes(p, n uint64) ([]byte, error) {
 		return nil, err
 	}
 
-	// executed a lazy reduce, must read from the 'cur' log
+	var raw []byte
 	if exec {
-		return ct.logs[cur].retrieveRawLog(ct.logs[cur].first, ct.logs[cur].last)
+		defer ct.mu[cur].Unlock()
+
+		// executed a lazy reduce, must read from the 'cur' log
+		raw, err = ct.logs[cur].retrieveRawLog(ct.logs[cur].first, ct.logs[cur].last)
+		if err != nil {
+			return nil, err
+		}
+
+	} else {
+		// didnt execute, must read from the previous log cursor
+		prev := atomic.LoadInt32(&ct.prevLog)
+		raw, err = ct.logs[prev].retrieveRawLog(ct.logs[prev].first, ct.logs[prev].last)
+		if err != nil {
+			return nil, err
+		}
 	}
-	// didnt execute, must read from the previous log cursor
-	prev := atomic.LoadInt32(&ct.prevLog)
-	return ct.logs[prev].retrieveRawLog(ct.logs[prev].first, ct.logs[prev].last)
+	return raw, nil
+}
+
+// RecovEntireLog ...
+func (ct *ConcTable) RecovEntireLog() (<-chan []byte, error) {
+	return nil, nil
 }
 
 // ReduceLog applies the configured algorithm on a specific view and updates
@@ -201,7 +229,6 @@ func (ct *ConcTable) handleReduce(ctx context.Context) {
 			return
 
 		case cur := <-ct.reduceReq:
-			ct.mu[cur].Lock()
 			err := ct.ReduceLog(cur)
 			if err != nil {
 				log.Fatalln("failed during reduce procedure, err:", err.Error())
@@ -287,12 +314,14 @@ func (ct *ConcTable) willRequireReduceOnView(wrt bool, id int) (bool, bool) {
 // 'config.Period' wasnt reached yet. Returns true if reduce was executed, false otherwise.
 func (ct *ConcTable) mayExecuteLazyReduce(id int) (bool, error) {
 	if ct.logs[id].config.Tick == Delayed {
+		ct.mu[id].Lock()
 		err := ct.ReduceLog(id)
 		if err != nil {
 			return true, err
 		}
 
 	} else if ct.logs[id].config.Tick == Interval && !ct.logs[id].firstReduceExists() {
+		ct.mu[id].Lock()
 		err := ct.ReduceLog(id)
 		if err != nil {
 			return true, err
@@ -346,4 +375,11 @@ func modInt(a, b int) int {
 		return a
 	}
 	return a + b
+}
+
+func applyConcIndexInFname(fn string, id int) string {
+	ind := strconv.Itoa(id)
+	sep := strings.SplitAfter(fn, ".")
+	sep[len(sep)-1] = ind + ".out"
+	return strings.Join(sep, "")
 }

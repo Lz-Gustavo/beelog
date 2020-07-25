@@ -8,6 +8,7 @@ import (
 	"io"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"testing"
@@ -204,8 +205,8 @@ func TestStructuresDifferentRecoveries(t *testing.T) {
 
 			// delete current logstate, if any, in order to avoid conflict on
 			// persistent interval scenarios
-			if cf.Tick == Interval && cf.Fname != "" {
-				if err := resetLogStates(cf.Fname); err != nil {
+			if cf.Tick == Interval && !cf.Inmem {
+				if err := cleanAllLogStates(); err != nil {
 					t.Log(err.Error())
 					t.FailNow()
 				}
@@ -264,6 +265,11 @@ func TestStructuresDifferentRecoveries(t *testing.T) {
 				t.FailNow()
 			}
 		}
+	}
+
+	if err := cleanAllLogStates(); err != nil {
+		t.Log(err.Error())
+		t.FailNow()
 	}
 }
 
@@ -373,6 +379,11 @@ func TestStructuresRecovBytesInterpretation(t *testing.T) {
 				t.FailNow()
 			}
 		}
+	}
+
+	if err := cleanAllLogStates(); err != nil {
+		t.Log(err.Error())
+		t.FailNow()
 	}
 }
 
@@ -600,15 +611,15 @@ func logsAreOnlyDelayed(logA, logB []pb.Command) bool {
 	return true
 }
 
-func resetLogStates(fn string) error {
-	err := os.Remove(fn)
-	if err != nil && !os.IsNotExist(err) {
+func cleanAllLogStates() error {
+	// TODO: think about a more restrictive pattern later
+	fs, err := filepath.Glob("./*.out")
+	if err != nil {
 		return err
 	}
 
-	// reset not only the informed index, but the different view states as well
-	for i := 0; i < concLevel; i++ {
-		err := os.Remove(fn + "." + strconv.Itoa(i))
+	for _, f := range fs {
+		err := os.Remove(f)
 		if err != nil && !os.IsNotExist(err) {
 			return err
 		}

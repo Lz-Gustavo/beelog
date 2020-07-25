@@ -7,6 +7,8 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/Lz-Gustavo/beelog/pb"
 
@@ -157,8 +159,21 @@ func (ld *logData) updateLogState(lg []pb.Command, p, n uint64) error {
 		return nil
 	}
 
-	// update the current state at ld.config.Fname
-	fd, err := os.OpenFile(ld.config.Fname, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	var fn string
+	if ld.config.KeepAll {
+		// create a new state and and filename at ld.config.Fname
+		sep := strings.SplitAfter(ld.config.Fname, ".")
+
+		// modify last index
+		sep[len(sep)-1] = strconv.FormatUint(n, 10) + ".out"
+		fn = strings.Join(sep, "")
+
+	} else {
+		// only update the current state at ld.config.Fname
+		fn = ld.config.Fname
+	}
+
+	fd, err := os.OpenFile(fn, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}

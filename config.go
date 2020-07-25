@@ -27,19 +27,21 @@ const (
 
 // LogConfig ...
 type LogConfig struct {
-	Alg    Reducer
-	Tick   ReduceInterval
-	Inmem  bool
-	Fname  string
-	Period uint32
+	Inmem   bool
+	KeepAll bool
+	Alg     Reducer
+	Tick    ReduceInterval
+	Period  uint32
+	Fname   string
 }
 
 // DefaultLogConfig ...
 func DefaultLogConfig() *LogConfig {
 	return &LogConfig{
-		Alg:   IterDFSAvl,
-		Tick:  Delayed,
-		Inmem: true,
+		Inmem:   true,
+		KeepAll: false,
+		Alg:     IterDFSAvl,
+		Tick:    Delayed,
 	}
 }
 
