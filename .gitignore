@@ -2,3 +2,4 @@ beelog
 sim/sim
 *.out
 *.out.*
+.vscode

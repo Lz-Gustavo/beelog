@@ -1,9 +1,15 @@
 package beelog
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"log"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -208,7 +214,76 @@ func (ct *ConcTable) RecovBytes(p, n uint64) ([]byte, error) {
 
 // RecovEntireLog ...
 func (ct *ConcTable) RecovEntireLog() (<-chan []byte, error) {
-	return nil, nil
+	// TODO: get the filepath of any config...
+	fp := "./*.out"
+
+	fs, err := filepath.Glob(fp)
+	if err != nil {
+		return nil, err
+	}
+
+	buf := bytes.NewBuffer(nil)
+	mu := &sync.Mutex{}
+
+	wg := sync.WaitGroup{}
+	wg.Add(len(fs))
+	fmt.Println("will be waiting on", len(fs), "files")
+
+	for _, f := range fs {
+		// read each file concurrently and write to buffer once done
+		go func(fn string) {
+			fd, err := os.OpenFile(fn, os.O_RDONLY, 0400)
+			if err != nil && err != io.EOF {
+				log.Fatalf("failed while opening log '%s', err: '%s'\n", fn, err.Error())
+			}
+			defer fd.Close()
+
+			// read the retrieved log interval
+			var f, l uint64
+			_, err = fmt.Fscanf(fd, "%d\n%d\n", &f, &l)
+			if err != nil {
+				log.Fatalf("failed while reading log '%s', err: '%s'\n", fn, err.Error())
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			// increase buffer's capacity, if necessary
+			if size := int(l - f); size >= (buf.Cap() - buf.Len()) {
+				buf.Grow(size)
+			}
+
+			// reset cursor
+			_, err = fd.Seek(0, io.SeekStart)
+			if err != nil {
+				log.Fatalf("failed while reading log '%s', err: '%s'\n", fn, err.Error())
+			}
+
+			// each copy stages through a temporary buffer, copying to dest once completed
+			_, err = io.Copy(buf, fd)
+			if err != nil {
+				log.Fatalf("failed while copying log '%s', err: '%s'\n", fn, err.Error())
+			}
+
+			wg.Done()
+			fmt.Println("finished one...")
+			return
+		}(f)
+	}
+
+	wg.Wait()
+	fmt.Println("finished reading logs!")
+
+	out := make(chan []byte, 0)
+	sc := bufio.NewScanner(buf)
+	go func() {
+		for sc.Scan() {
+			out <- sc.Bytes()
+		}
+		close(out)
+		return
+	}()
+	return out, nil
 }
 
 // ReduceLog applies the configured algorithm on a specific view and updates
