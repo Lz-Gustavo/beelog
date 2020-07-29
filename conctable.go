@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -50,7 +51,7 @@ func NewConcTable(ctx context.Context) *ConcTable {
 
 	for i := 0; i < concLevel; i++ {
 		def := *DefaultLogConfig()
-		def.Fname = applyConcIndexInFname(def.Fname, i)
+		//def.Fname = applyConcIndexInFname(def.Fname, i)
 		ct.logs[i] = logData{config: &def}
 		ct.views[i] = make(minStateTable, 0)
 	}
@@ -73,7 +74,7 @@ func NewConcTableWithConfig(ctx context.Context, cfg *LogConfig) (*ConcTable, er
 
 	for i := 0; i < concLevel; i++ {
 		nCfg := *cfg
-		nCfg.Fname = applyConcIndexInFname(nCfg.Fname, i)
+		//nCfg.Fname = applyConcIndexInFname(nCfg.Fname, i)
 		ct.logs[i] = logData{config: &nCfg}
 		ct.views[i] = make(minStateTable, 0)
 	}
@@ -213,15 +214,61 @@ func (ct *ConcTable) RecovBytes(p, n uint64) ([]byte, error) {
 }
 
 // RecovEntireLog ...
-func (ct *ConcTable) RecovEntireLog() (<-chan []byte, error) {
+func (ct *ConcTable) RecovEntireLog() ([]byte, int, error) {
 	// TODO: get the filepath of any config...
 	fp := "./*.out"
 
 	fs, err := filepath.Glob(fp)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
+	// sorts by lenght and lexicographically for equal len
+	sort.Sort(byLenAlpha(fs))
+	buf := bytes.NewBuffer(nil)
+
+	for _, fn := range fs {
+		fd, err := os.OpenFile(fn, os.O_RDONLY, 0400)
+		if err != nil && err != io.EOF {
+			return nil, 0, fmt.Errorf("failed while opening log '%s', err: '%s'", fn, err.Error())
+		}
+		defer fd.Close()
+
+		// read the retrieved log interval
+		var f, l uint64
+		_, err = fmt.Fscanf(fd, "%d\n%d\n", &f, &l)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed while reading log '%s', err: '%s'", fn, err.Error())
+		}
+
+		// reset cursor
+		_, err = fd.Seek(0, io.SeekStart)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed while reading log '%s', err: '%s'", fn, err.Error())
+		}
+
+		// each copy stages through a temporary buffer, copying to dest once completed
+		_, err = io.Copy(buf, fd)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed while copying log '%s', err: '%s'", fn, err.Error())
+		}
+	}
+	return buf.Bytes(), len(fs), nil
+}
+
+// RecovEntireLogConc ...
+// TODO: comeback later once sequential solution is done.
+func (ct *ConcTable) RecovEntireLogConc() (<-chan []byte, int, error) {
+	// TODO: get the filepath of any config...
+	fp := "./*.out"
+
+	fs, err := filepath.Glob(fp)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// sorts by lenght and lexicographically for equal len
+	sort.Sort(byLenAlpha(fs))
 	buf := bytes.NewBuffer(nil)
 	mu := &sync.Mutex{}
 
@@ -283,7 +330,7 @@ func (ct *ConcTable) RecovEntireLog() (<-chan []byte, error) {
 		close(out)
 		return
 	}()
-	return out, nil
+	return out, len(fs), nil
 }
 
 // ReduceLog applies the configured algorithm on a specific view and updates
@@ -457,4 +504,21 @@ func applyConcIndexInFname(fn string, id int) string {
 	sep := strings.SplitAfter(fn, ".")
 	sep[len(sep)-1] = ind + ".out"
 	return strings.Join(sep, "")
+}
+
+type byLenAlpha []string
+
+func (a byLenAlpha) Len() int      { return len(a) }
+func (a byLenAlpha) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a byLenAlpha) Less(i, j int) bool {
+
+	// lenght order prio
+	if len(a[i]) < len(a[j]) {
+		return true
+	}
+	// alphabetic
+	if len(a[i]) == len(a[j]) {
+		return strings.Compare(a[i], a[j]) == -1
+	}
+	return false
 }

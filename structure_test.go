@@ -485,14 +485,14 @@ func deserializeRawLog(log []byte) ([]pb.Command, error) {
 
 	// read the retrieved log interval
 	var f, l uint64
-	_, err := fmt.Fscanf(rd, "%d\n%d\n", &f, &l)
+	var ln int
+	_, err := fmt.Fscanf(rd, "%d\n%d\n%d\n", &f, &l, &ln)
 	if err != nil {
 		return nil, err
 	}
 
-	cmds := make([]pb.Command, 0, l-f)
-	for {
-
+	cmds := make([]pb.Command, 0, ln)
+	for j := 0; j < ln; j++ {
 		var commandLength int32
 		err := binary.Read(rd, binary.BigEndian, &commandLength)
 		if err == io.EOF {
@@ -515,6 +515,16 @@ func deserializeRawLog(log []byte) ([]pb.Command, error) {
 			return nil, err
 		}
 		cmds = append(cmds, *c)
+	}
+
+	var eol string
+	_, err = fmt.Fscanf(rd, "\n%s\n", &eol)
+	if err != nil {
+		return nil, err
+	}
+
+	if eol != "EOL" {
+		return nil, fmt.Errorf("expected EOL flag, got '%s'", eol)
 	}
 	return cmds, nil
 }

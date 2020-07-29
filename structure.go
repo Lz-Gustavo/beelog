@@ -201,7 +201,7 @@ func (ld *logData) appendToLogState(lg []pb.Command, p, n uint64) error {
 	}
 	defer fd.Close()
 
-	if err = UpdateLogIndexesInFile(fd, p, n); err != nil {
+	if err = UpdateLogIndexesInFile(fd, p, n, len(lg)); err != nil {
 		return err
 	}
 
@@ -249,13 +249,14 @@ func RetainLogInterval(log *[]pb.Command, p, n uint64) []pb.Command {
 func UnmarshalLogFromReader(logRd io.Reader) ([]pb.Command, error) {
 	// read the retrieved log interval
 	var f, l uint64
-	_, err := fmt.Fscanf(logRd, "%d\n%d\n", &f, &l)
+	var ln int
+	_, err := fmt.Fscanf(logRd, "%d\n%d\n%d\n", &f, &l, &ln)
 	if err != nil {
 		return nil, err
 	}
 
-	cmds := make([]pb.Command, 0, l-f)
-	for {
+	cmds := make([]pb.Command, 0, ln)
+	for j := 0; j < ln; j++ {
 		var commandLength int32
 		err := binary.Read(logRd, binary.BigEndian, &commandLength)
 		if err == io.EOF {
@@ -279,6 +280,16 @@ func UnmarshalLogFromReader(logRd io.Reader) ([]pb.Command, error) {
 		}
 		cmds = append(cmds, *c)
 	}
+
+	var eol string
+	_, err = fmt.Fscanf(logRd, "\n%s\n", &eol)
+	if err != nil {
+		return nil, err
+	}
+
+	if eol != "EOL" {
+		return nil, fmt.Errorf("expected EOL flag, got '%s'", eol)
+	}
 	return cmds, nil
 }
 
@@ -287,8 +298,8 @@ func UnmarshalLogFromReader(logRd io.Reader) ([]pb.Command, error) {
 // each command is binary encoded before the raw pbuff. Commands are marshaled and written to
 // 'logWr' one by one.
 func MarshalLogIntoWriter(logWr io.Writer, log *[]pb.Command, p, n uint64) error {
-	// write requested delimiters for the current state
-	_, err := fmt.Fprintf(logWr, "%d\n%d\n", p, n)
+	// write requested delimiters for the current state and num
+	_, err := fmt.Fprintf(logWr, "%d\n%d\n%d\n", p, n, len(*log))
 	if err != nil {
 		return err
 	}
@@ -309,6 +320,12 @@ func MarshalLogIntoWriter(logWr io.Writer, log *[]pb.Command, p, n uint64) error
 		if err != nil {
 			return err
 		}
+	}
+
+	// manually write an add-hoc EOL (end-of-log) mark
+	_, err = fmt.Fprintln(logWr, "\nEOL")
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -351,14 +368,15 @@ func MarshalAndAppendIntoWriter(logWr io.WriteSeeker, log *[]pb.Command) error {
 // the entire sequence. Recognizes the following format (single quotes (') chars not present):
 //   'p index'\n
 //   'n index'\n
+//   'len' cdms\n
 //   'log...'
-func UpdateLogIndexesInFile(fd *os.File, p, n uint64) error {
+func UpdateLogIndexesInFile(fd *os.File, p, n uint64, ln int) error {
 	_, err := fd.Seek(0, io.SeekStart)
 	if err != nil {
 		return err
 	}
 
-	_, err = fmt.Fprintf(fd, "%d\n%d\n", p, n)
+	_, err = fmt.Fprintf(fd, "%d\n%d\n%d\n", p, n, ln)
 	if err != nil {
 		return err
 	}

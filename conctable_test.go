@@ -1,23 +1,21 @@
 package beelog
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"testing"
+
+	"github.com/Lz-Gustavo/beelog/pb"
+	"github.com/golang/protobuf/proto"
 )
 
 func TestConcTableRecovEntireLog(t *testing.T) {
 	nCmds, wrt, dif := uint64(2000), 50, 100
-	//p, n := uint64(100), uint64(1500)
+	concRecov := false
 
 	cfgs := []LogConfig{
-		// {
-		// 	Inmem:   false,
-		// 	KeepAll: true,
-		// 	Alg:     IterConcTable,
-		// 	Tick:    Delayed,
-		// 	Fname:   "./logstate.out",
-		// },
 		{
 			Inmem:   false,
 			KeepAll: true,
@@ -44,32 +42,50 @@ func TestConcTableRecovEntireLog(t *testing.T) {
 			t.FailNow()
 		}
 
-		ch, err := st.(*ConcTable).RecovEntireLog()
-		if err != nil {
-			t.Log(err.Error())
-			t.FailNow()
-		}
-		fmt.Println("now reading ch...")
-
-		for {
-			raw, ok := <-ch
-			if !ok { // closed ch
-				fmt.Println("closed!")
-				break
+		if concRecov {
+			ch, num, err := st.(*ConcTable).RecovEntireLogConc()
+			if err != nil {
+				t.Log(err.Error())
+				t.FailNow()
 			}
-			fmt.Println("got one, deserializing")
+			fmt.Println("now reading ch...")
 
-			log, err := deserializeRawLog(raw)
-			if err == io.EOF {
-				t.Log("empty log")
-				t.Fail()
+			for {
+				raw, ok := <-ch
+				if !ok { // closed ch
+					fmt.Println("closed!")
+					break
+				}
+				fmt.Println("got one, deserializing")
 
-			} else if err != nil {
-				t.Log("error while deserializing log, err:", err.Error())
+				log, err := deserializeRawLogStream(raw, num)
+				if err == io.EOF {
+					t.Log("empty log")
+					t.Fail()
+
+				} else if err != nil {
+					t.Log("error while deserializing log, err:", err.Error())
+					t.FailNow()
+				}
+
+				t.Log("got one log:", log)
+				// TODO: test log...
+			}
+		} else {
+
+			raw, num, err := st.(*ConcTable).RecovEntireLog()
+			if err != nil {
+				t.Log(err.Error())
 				t.FailNow()
 			}
 
-			fmt.Println("got log:", log)
+			log, err := deserializeRawLogStream(raw, num)
+			if err != nil {
+				t.Log(err.Error())
+				t.FailNow()
+			}
+
+			t.Log("got log:", log)
 			// TODO: test log...
 		}
 	}
@@ -78,4 +94,59 @@ func TestConcTableRecovEntireLog(t *testing.T) {
 		t.Log(err.Error())
 		t.FailNow()
 	}
+}
+
+// deserializeRawLogStream emulates the same procedure implemented by a recov
+// replica, interpreting the serialized log stream received from RecovEntireLog
+// different calls.
+func deserializeRawLogStream(stream []byte, size int) ([]pb.Command, error) {
+	rd := bytes.NewReader(stream)
+	cmds := make([]pb.Command, 0, 256*size)
+
+	for i := 0; i < size; i++ {
+		// read the retrieved log interval
+		var f, l uint64
+		var ln int
+		_, err := fmt.Fscanf(rd, "%d\n%d\n%d\n", &f, &l, &ln)
+		if err != nil {
+			return nil, err
+		}
+
+		for j := 0; j < ln; j++ {
+			var commandLength int32
+			err = binary.Read(rd, binary.BigEndian, &commandLength)
+			if err == io.EOF {
+				break
+			} else if err != nil {
+				return nil, err
+			}
+
+			serializedCmd := make([]byte, commandLength)
+			_, err = rd.Read(serializedCmd)
+			if err == io.EOF {
+				break
+			} else if err != nil {
+				return nil, err
+			}
+
+			c := &pb.Command{}
+			err = proto.Unmarshal(serializedCmd, c)
+			if err != nil {
+				fmt.Println("could not parse")
+				return nil, err
+			}
+			cmds = append(cmds, *c)
+		}
+
+		var eol string
+		_, err = fmt.Fscanf(rd, "\n%s\n", &eol)
+		if err != nil {
+			return nil, err
+		}
+
+		if eol != "EOL" {
+			return nil, fmt.Errorf("expected EOL flag, got '%s'", eol)
+		}
+	}
+	return cmds, nil
 }
