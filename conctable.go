@@ -39,6 +39,7 @@ type ConcTable struct {
 	curMu     sync.Mutex
 	current   int
 	prevLog   int32 // atomic
+	logFolder string
 }
 
 // NewConcTable ...
@@ -49,12 +50,12 @@ func NewConcTable(ctx context.Context) *ConcTable {
 		reduceReq: make(chan int, chanBuffSize),
 	}
 
+	def := *DefaultLogConfig()
 	for i := 0; i < concLevel; i++ {
-		def := *DefaultLogConfig()
-		//def.Fname = applyConcIndexInFname(def.Fname, i)
 		ct.logs[i] = logData{config: &def}
 		ct.views[i] = make(minStateTable, 0)
 	}
+	ct.logFolder = extractLocation(def.Fname)
 	go ct.handleReduce(c)
 	return ct
 }
@@ -73,11 +74,10 @@ func NewConcTableWithConfig(ctx context.Context, cfg *LogConfig) (*ConcTable, er
 	}
 
 	for i := 0; i < concLevel; i++ {
-		nCfg := *cfg
-		//nCfg.Fname = applyConcIndexInFname(nCfg.Fname, i)
-		ct.logs[i] = logData{config: &nCfg}
+		ct.logs[i] = logData{config: cfg}
 		ct.views[i] = make(minStateTable, 0)
 	}
+	ct.logFolder = extractLocation(cfg.Fname)
 	go ct.handleReduce(c)
 	return ct, nil
 }
@@ -215,9 +215,7 @@ func (ct *ConcTable) RecovBytes(p, n uint64) ([]byte, error) {
 
 // RecovEntireLog ...
 func (ct *ConcTable) RecovEntireLog() ([]byte, int, error) {
-	// TODO: get the filepath of any config...
-	fp := "./*.out"
-
+	fp := ct.logFolder + "*.out"
 	fs, err := filepath.Glob(fp)
 	if err != nil {
 		return nil, 0, err
@@ -259,9 +257,7 @@ func (ct *ConcTable) RecovEntireLog() ([]byte, int, error) {
 // RecovEntireLogConc ...
 // TODO: comeback later once sequential solution is done.
 func (ct *ConcTable) RecovEntireLogConc() (<-chan []byte, int, error) {
-	// TODO: get the filepath of any config...
-	fp := "./*.out"
-
+	fp := ct.logFolder + "*.out"
 	fs, err := filepath.Glob(fp)
 	if err != nil {
 		return nil, 0, err
@@ -506,12 +502,25 @@ func applyConcIndexInFname(fn string, id int) string {
 	return strings.Join(sep, "")
 }
 
+// extractLocation returns the folder location specified in 'fn', searching for the
+// occurence of slash characters ('/'). If none slash is found, "./" is returned instead.
+//
+// Example:
+//   "/path/to/something/content.log" -> "/path/to/something/"
+//   "foo.bar"                        -> "./"
+func extractLocation(fn string) string {
+	ind := strings.LastIndex(fn, "/") + 1
+	if ind != -1 {
+		return fn[:ind]
+	}
+	return "./"
+}
+
 type byLenAlpha []string
 
 func (a byLenAlpha) Len() int      { return len(a) }
 func (a byLenAlpha) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 func (a byLenAlpha) Less(i, j int) bool {
-
 	// lenght order prio
 	if len(a[i]) < len(a[j]) {
 		return true
