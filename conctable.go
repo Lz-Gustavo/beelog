@@ -107,10 +107,11 @@ func (ct *ConcTable) Log(cmd pb.Command) error {
 	if advance {
 		ct.advanceCurrentView()
 	}
+
+	// must acquire view mutex before releasing cursor to ensure safety
+	ct.mu[cur].Lock()
 	ct.curMu.Unlock()
 
-	tbl := ct.views[cur]
-	ct.mu[cur].Lock()
 	// adjust first structure index
 	if !ct.logs[cur].logged {
 		ct.logs[cur].first = cmd.Id
@@ -123,7 +124,7 @@ func (ct *ConcTable) Log(cmd pb.Command) error {
 			ind: cmd.Id,
 			cmd: cmd,
 		}
-		tbl[cmd.Key] = st
+		ct.views[cur][cmd.Key] = st
 	}
 	// adjust last index
 	ct.logs[cur].last = cmd.Id
