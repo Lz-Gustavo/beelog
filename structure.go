@@ -308,7 +308,7 @@ func UnmarshalLogWithLenFromReader(logRd io.Reader, n int) ([]pb.Command, error)
 		return nil, err
 	}
 
-	cmds := make([]pb.Command, 0, ln)
+	cmds := make([]pb.Command, 0, n)
 	for j := 0; j < n; j++ {
 		var commandLength int32
 		err := binary.Read(logRd, binary.BigEndian, &commandLength)
