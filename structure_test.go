@@ -152,18 +152,18 @@ func TestStructuresDifferentRecoveries(t *testing.T) {
 		{ // immediately disk
 			Tick:  Immediately,
 			Inmem: false,
-			Fname: "./logstate.out",
+			Fname: "./logstate.log",
 		},
 		{ // delayed disk
 			Tick:  Delayed,
 			Inmem: false,
-			Fname: "./logstate.out",
+			Fname: "./logstate.log",
 		},
 		{ // interval disk
 			Tick:   Interval,
 			Period: 10000,
 			Inmem:  false,
-			Fname:  "./logstate.out",
+			Fname:  "./logstate.log",
 		},
 	}
 
@@ -285,7 +285,7 @@ func TestStructuresRecovBytesInterpretation(t *testing.T) {
 		{ // disk byte recov
 			Tick:  Delayed,
 			Inmem: false,
-			Fname: "./logstate.out",
+			Fname: "./logstate.log",
 		},
 	}
 
@@ -623,7 +623,7 @@ func logsAreOnlyDelayed(logA, logB []pb.Command) bool {
 
 func cleanAllLogStates() error {
 	// TODO: think about a more restrictive pattern later
-	fs, err := filepath.Glob("./*.out")
+	fs, err := filepath.Glob("./*.log")
 	if err != nil {
 		return err
 	}

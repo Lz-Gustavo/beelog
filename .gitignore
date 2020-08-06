@@ -1,5 +1,4 @@
-beelog
 sim/sim
 *.out
-*.out.*
+*.log
 .vscode

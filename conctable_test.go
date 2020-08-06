@@ -22,7 +22,7 @@ func TestConcTableRecovEntireLog(t *testing.T) {
 			Alg:     IterConcTable,
 			Tick:    Interval,
 			Period:  100,
-			Fname:   "./logstate.out",
+			Fname:   "./logstate.log",
 		},
 	}
 

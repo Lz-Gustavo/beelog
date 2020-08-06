@@ -216,7 +216,7 @@ func (ct *ConcTable) RecovBytes(p, n uint64) ([]byte, error) {
 
 // RecovEntireLog ...
 func (ct *ConcTable) RecovEntireLog() ([]byte, int, error) {
-	fp := ct.logFolder + "*.out"
+	fp := ct.logFolder + "*.log"
 	fs, err := filepath.Glob(fp)
 	if err != nil {
 		return nil, 0, err
@@ -258,7 +258,7 @@ func (ct *ConcTable) RecovEntireLog() ([]byte, int, error) {
 // RecovEntireLogConc ...
 // TODO: comeback later once sequential solution is done.
 func (ct *ConcTable) RecovEntireLogConc() (<-chan []byte, int, error) {
-	fp := ct.logFolder + "*.out"
+	fp := ct.logFolder + "*.log"
 	fs, err := filepath.Glob(fp)
 	if err != nil {
 		return nil, 0, err
@@ -499,7 +499,7 @@ func modInt(a, b int) int {
 func applyConcIndexInFname(fn string, id int) string {
 	ind := strconv.Itoa(id)
 	sep := strings.SplitAfter(fn, ".")
-	sep[len(sep)-1] = ind + ".out"
+	sep[len(sep)-1] = ind + ".log"
 	return strings.Join(sep, "")
 }
 
