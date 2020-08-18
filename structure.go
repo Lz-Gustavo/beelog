@@ -265,8 +265,8 @@ func UnmarshalLogFromReader(logRd io.Reader) ([]pb.Command, error) {
 			return nil, err
 		}
 
-		serializedCmd := make([]byte, commandLength)
-		_, err = logRd.Read(serializedCmd)
+		raw := make([]byte, commandLength)
+		_, err = logRd.Read(raw)
 		if err == io.EOF {
 			break
 		} else if err != nil {
@@ -274,7 +274,7 @@ func UnmarshalLogFromReader(logRd io.Reader) ([]pb.Command, error) {
 		}
 
 		c := &pb.Command{}
-		err = proto.Unmarshal(serializedCmd, c)
+		err = proto.Unmarshal(raw, c)
 		if err != nil {
 			return nil, err
 		}
@@ -293,12 +293,12 @@ func UnmarshalLogFromReader(logRd io.Reader) ([]pb.Command, error) {
 	return cmds, nil
 }
 
-// UnmarshalLogWithLenFromReader returns 'n' from the log contained at 'logRd', interpreting
+// UnmarshalLogWithLenFromReader returns 'n' cmds from the log contained at 'logRd', interpreting
 // commands from the byte stream following a simple slicing protocol, where the size of each
 // command is binary encoded before each raw pbuff.
 //
-// TODO: Currently used only on persistent ad-hoc log scenarios (i.e. without beelog). Investigate
-// necessity better later.
+// Important: 'EOL' flag is not mandatory when limiting the number of commands. That allows a
+// concurrent interpretation of the log content while being written by an APPEND file descriptor.
 func UnmarshalLogWithLenFromReader(logRd io.Reader, n int) ([]pb.Command, error) {
 	// read the retrieved log interval ln parsed, matching log format, but ignored
 	var f, l uint64
@@ -313,35 +313,25 @@ func UnmarshalLogWithLenFromReader(logRd io.Reader, n int) ([]pb.Command, error)
 		var commandLength int32
 		err := binary.Read(logRd, binary.BigEndian, &commandLength)
 		if err == io.EOF {
-			break
+			return nil, fmt.Errorf("expected a log with %d commands, but got %d", n, j)
 		} else if err != nil {
 			return nil, err
 		}
 
-		serializedCmd := make([]byte, commandLength)
-		_, err = logRd.Read(serializedCmd)
+		raw := make([]byte, commandLength)
+		_, err = logRd.Read(raw)
 		if err == io.EOF {
-			break
+			return nil, fmt.Errorf("expected a log with %d commands, but got %d", n, j)
 		} else if err != nil {
 			return nil, err
 		}
 
 		c := &pb.Command{}
-		err = proto.Unmarshal(serializedCmd, c)
+		err = proto.Unmarshal(raw, c)
 		if err != nil {
 			return nil, err
 		}
 		cmds = append(cmds, *c)
-	}
-
-	var eol string
-	_, err = fmt.Fscanf(logRd, "\n%s\n", &eol)
-	if err != nil {
-		return nil, err
-	}
-
-	if eol != "EOL" {
-		return nil, fmt.Errorf("expected EOL flag, got '%s'", eol)
 	}
 	return cmds, nil
 }
