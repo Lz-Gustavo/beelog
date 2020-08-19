@@ -247,26 +247,40 @@ func RetainLogInterval(log *[]pb.Command, p, n uint64) []pb.Command {
 // from the byte stream following a simple slicing protocol, where the size of each command
 // is binary encoded before each raw pbuff.
 func UnmarshalLogFromReader(logRd io.Reader) ([]pb.Command, error) {
-	// read the retrieved log interval
 	var f, l uint64
 	var ln int
+
+	// read the retrieved log interval
 	_, err := fmt.Fscanf(logRd, "%d\n%d\n%d\n", &f, &l, &ln)
 	if err != nil {
 		return nil, err
 	}
 
+	if ln >= 0 {
+		return unmarshalBeelog(logRd, ln)
+	}
+	return unmarshalTradLog(logRd)
+}
+
+// beelog format starts with three integers: the first and the last indexes of the retrieved
+// command interval, and 'n', representing the number of commands on the log. Due to log
+// reduce procedures, the number of retrieved commands will possibly be less than the 'last - first'
+// difference. The numbers are followed by a sequence of 'n' serialized pbuff commands, each
+// prefixed by its binary encoded size, 32b, BigEndian format. An 'EOL' flag at tail is mandatory,
+// signaling a safe log creation.
+func unmarshalBeelog(rd io.Reader, ln int) ([]pb.Command, error) {
 	cmds := make([]pb.Command, 0, ln)
 	for j := 0; j < ln; j++ {
-		var commandLength int32
-		err := binary.Read(logRd, binary.BigEndian, &commandLength)
+		var cmdLen int32
+		err := binary.Read(rd, binary.BigEndian, &cmdLen)
 		if err == io.EOF {
 			break
 		} else if err != nil {
 			return nil, err
 		}
 
-		raw := make([]byte, commandLength)
-		_, err = logRd.Read(raw)
+		raw := make([]byte, cmdLen)
+		_, err = rd.Read(raw)
 		if err == io.EOF {
 			break
 		} else if err != nil {
@@ -282,13 +296,46 @@ func UnmarshalLogFromReader(logRd io.Reader) ([]pb.Command, error) {
 	}
 
 	var eol string
-	_, err = fmt.Fscanf(logRd, "\n%s\n", &eol)
+	_, err := fmt.Fscanf(rd, "\n%s\n", &eol)
 	if err != nil {
 		return nil, err
 	}
 
 	if eol != "EOL" {
 		return nil, fmt.Errorf("expected EOL flag, got '%s'", eol)
+	}
+	return cmds, nil
+}
+
+// traditional log format starts with three integers: the first and the last indexes of the
+// retrieved command interval, and '-1', differentiating this log format from 'beelog'.
+// The numbers are followed by a sequence of serialized pbuff commands, each prefixed by
+// its binary encoded size, 32b, BigEndian format. Commands are parsed until EOF.
+func unmarshalTradLog(rd io.Reader) ([]pb.Command, error) {
+	cmds := make([]pb.Command, 0)
+	for j := 0; ; j++ {
+		var cmdLen int32
+		err := binary.Read(rd, binary.BigEndian, &cmdLen)
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, err
+		}
+
+		raw := make([]byte, cmdLen)
+		_, err = rd.Read(raw)
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, err
+		}
+
+		c := &pb.Command{}
+		err = proto.Unmarshal(raw, c)
+		if err != nil {
+			return nil, err
+		}
+		cmds = append(cmds, *c)
 	}
 	return cmds, nil
 }
