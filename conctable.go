@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	// maximum of 'concLevel' different views of the same structure.
-	concLevel int = 2
+	// ConcTable.concLevel sets the number of different views of the same structure.
+	defaultConcLvl int = 2
 
 	// number of commands to wait until a complete state reset for Immediately
 	// reduce period.
@@ -30,11 +30,12 @@ const (
 
 // ConcTable ...
 type ConcTable struct {
-	views [concLevel]minStateTable
-	mu    [concLevel]sync.Mutex
-	logs  [concLevel]logData
+	views []minStateTable
+	mu    []sync.Mutex
+	logs  []logData
 	canc  context.CancelFunc
 
+	concLevel int
 	reduceReq chan int
 	curMu     sync.Mutex
 	current   int
@@ -48,10 +49,15 @@ func NewConcTable(ctx context.Context) *ConcTable {
 	ct := &ConcTable{
 		canc:      cancel,
 		reduceReq: make(chan int, chanBuffSize),
+		concLevel: defaultConcLvl,
+
+		views: make([]minStateTable, defaultConcLvl, defaultConcLvl),
+		mu:    make([]sync.Mutex, defaultConcLvl, defaultConcLvl),
+		logs:  make([]logData, defaultConcLvl, defaultConcLvl),
 	}
 
 	def := *DefaultLogConfig()
-	for i := 0; i < concLevel; i++ {
+	for i := 0; i < defaultConcLvl; i++ {
 		ct.logs[i] = logData{config: &def}
 		ct.views[i] = make(minStateTable, 0)
 	}
@@ -61,19 +67,27 @@ func NewConcTable(ctx context.Context) *ConcTable {
 }
 
 // NewConcTableWithConfig ...
-func NewConcTableWithConfig(ctx context.Context, cfg *LogConfig) (*ConcTable, error) {
+func NewConcTableWithConfig(ctx context.Context, concLvl int, cfg *LogConfig) (*ConcTable, error) {
 	err := cfg.ValidateConfig()
 	if err != nil {
 		return nil, err
+	}
+	if concLvl < 0 {
+		return nil, errors.New("must inform a positive value for 'concLevel' argument")
 	}
 
 	c, cancel := context.WithCancel(ctx)
 	ct := &ConcTable{
 		canc:      cancel,
 		reduceReq: make(chan int, chanBuffSize),
+		concLevel: concLvl,
+
+		views: make([]minStateTable, concLvl, concLvl),
+		mu:    make([]sync.Mutex, concLvl, concLvl),
+		logs:  make([]logData, concLvl, concLvl),
 	}
 
-	for i := 0; i < concLevel; i++ {
+	for i := 0; i < concLvl; i++ {
 		ct.logs[i] = logData{config: cfg}
 		ct.views[i] = make(minStateTable, 0)
 	}
@@ -385,8 +399,8 @@ func (ct *ConcTable) readAndAdvanceCurrentView() int {
 
 // advanceCurrentView advances the current view to its next id.
 func (ct *ConcTable) advanceCurrentView() {
-	d := (ct.current - concLevel + 1)
-	ct.current = modInt(d, concLevel)
+	d := (ct.current - ct.concLevel + 1)
+	ct.current = modInt(d, ct.concLevel)
 }
 
 // mayTriggerReduceOnView possibly triggers the reduce algorithm over the informed view

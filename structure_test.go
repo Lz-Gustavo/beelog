@@ -442,7 +442,7 @@ func generateRandStructure(id uint8, n uint64, wrt, dif int, cfg *LogConfig) (St
 		if cfg == nil {
 			st = NewConcTable(context.TODO())
 		} else {
-			st, err = NewConcTableWithConfig(context.TODO(), cfg)
+			st, err = NewConcTableWithConfig(context.TODO(), defaultConcLvl, cfg)
 			if err != nil {
 				return nil, err
 			}
