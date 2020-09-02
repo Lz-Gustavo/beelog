@@ -310,13 +310,14 @@ func unmarshalBeelog(rd io.Reader, ln int) ([]pb.Command, error) {
 // traditional log format starts with three integers: the first and the last indexes of the
 // retrieved command interval, and '-1', differentiating this log format from 'beelog'.
 // The numbers are followed by a sequence of serialized pbuff commands, each prefixed by
-// its binary encoded size, 32b, BigEndian format. Commands are parsed until EOF.
+// its binary encoded size, 32b, BigEndian format. Commands are parsed until EOF or
+// ErrUnexpectedEOF during file read.
 func unmarshalTradLog(rd io.Reader) ([]pb.Command, error) {
 	cmds := make([]pb.Command, 0)
 	for j := 0; ; j++ {
 		var cmdLen int32
 		err := binary.Read(rd, binary.BigEndian, &cmdLen)
-		if err == io.EOF {
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
 			break
 		} else if err != nil {
 			return nil, err
@@ -324,7 +325,7 @@ func unmarshalTradLog(rd io.Reader) ([]pb.Command, error) {
 
 		raw := make([]byte, cmdLen)
 		_, err = rd.Read(raw)
-		if err == io.EOF {
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
 			break
 		} else if err != nil {
 			return nil, err
