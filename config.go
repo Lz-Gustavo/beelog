@@ -29,6 +29,7 @@ const (
 type LogConfig struct {
 	Inmem   bool
 	KeepAll bool
+	Sync    bool
 	Alg     Reducer
 	Tick    ReduceInterval
 	Period  uint32
@@ -40,6 +41,7 @@ func DefaultLogConfig() *LogConfig {
 	return &LogConfig{
 		Inmem:   true,
 		KeepAll: false,
+		Sync:    false,
 		Alg:     IterDFSAvl,
 		Tick:    Delayed,
 	}

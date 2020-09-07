@@ -344,14 +344,39 @@ func (ct *ConcTable) RecovEntireLogConc() (<-chan []byte, int, error) {
 	return out, len(fs), nil
 }
 
-// ReduceLog applies the configured algorithm on a specific view and updates
-// the lates log state into a new file.
-func (ct *ConcTable) ReduceLog(id int) error {
+// persistView applies the configured algorithm on a specific view and updates
+// the latest log state into a new file.
+func (ct *ConcTable) persistView(id int) error {
 	cmds, err := ct.executeReduceAlgOnView(id)
 	if err != nil {
 		return err
 	}
 	return ct.logs[id].updateLogState(cmds, ct.logs[id].first, ct.logs[id].last)
+}
+
+func (ct *ConcTable) reduceLog(cur int, count *int) error {
+	err := ct.persistView(cur)
+	if err != nil {
+		return err
+	}
+
+	// always log, but reset persistent state only after 'resetOnImmediately' cmds
+	if ct.logs[cur].config.Tick == Immediately {
+		*count++
+		if *count < resetOnImmediately {
+			ct.mu[cur].Unlock()
+			return nil
+		}
+		*count = 0
+	}
+
+	// update the last reduced index
+	atomic.StoreInt32(&ct.prevLog, int32(cur))
+
+	// clean 'cur' view state
+	ct.resetViewState(cur)
+	ct.mu[cur].Unlock()
+	return nil
 }
 
 func (ct *ConcTable) handleReduce(ctx context.Context) {
@@ -362,27 +387,28 @@ func (ct *ConcTable) handleReduce(ctx context.Context) {
 			return
 
 		case cur := <-ct.reduceReq:
-			err := ct.ReduceLog(cur)
+			err := ct.reduceLog(cur, &count)
+			if err != nil {
+				log.Fatalln("failed during reduce procedure, err:", err.Error())
+			}
+		}
+	}
+}
+
+func (ct *ConcTable) handleReduceAndMeasureLat(ctx context.Context) {
+	var count int
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case cur := <-ct.reduceReq:
+			err := ct.reduceLog(cur, &count)
 			if err != nil {
 				log.Fatalln("failed during reduce procedure, err:", err.Error())
 			}
 
-			// always log, but reset persistent state only after 'resetOnImmediately' cmds
-			if ct.logs[cur].config.Tick == Immediately {
-				count++
-				if count < resetOnImmediately {
-					ct.mu[cur].Unlock()
-					continue
-				}
-				count = 0
-			}
-
-			// update the last reduced index
-			atomic.StoreInt32(&ct.prevLog, int32(cur))
-
-			// clean 'cur' view state
-			ct.resetViewState(cur)
-			ct.mu[cur].Unlock()
+			// TODO: measure latency by terminating a timer started on Log() procedure
 		}
 	}
 }
@@ -448,14 +474,14 @@ func (ct *ConcTable) willRequireReduceOnView(wrt bool, id int) (bool, bool) {
 func (ct *ConcTable) mayExecuteLazyReduce(id int) (bool, error) {
 	if ct.logs[id].config.Tick == Delayed {
 		ct.mu[id].Lock()
-		err := ct.ReduceLog(id)
+		err := ct.persistView(id)
 		if err != nil {
 			return true, err
 		}
 
 	} else if ct.logs[id].config.Tick == Interval && !ct.logs[id].firstReduceExists() {
 		ct.mu[id].Lock()
-		err := ct.ReduceLog(id)
+		err := ct.persistView(id)
 		if err != nil {
 			return true, err
 		}

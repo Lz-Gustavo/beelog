@@ -173,15 +173,29 @@ func (ld *logData) updateLogState(lg []pb.Command, p, n uint64) error {
 		fn = ld.config.Fname
 	}
 
-	fd, err := os.OpenFile(fn, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer fd.Close()
+	if ld.config.Sync {
+		fd, err := os.OpenFile(fn, os.O_CREATE|os.O_TRUNC|os.O_WRONLY|os.O_SYNC, 0644)
+		if err != nil {
+			return err
+		}
+		defer fd.Close()
 
-	err = MarshalLogIntoWriter(fd, &lg, p, n)
-	if err != nil {
-		return err
+		err = MarshalBufferedLogIntoWriter(fd, &lg, p, n)
+		if err != nil {
+			return err
+		}
+
+	} else {
+		fd, err := os.OpenFile(fn, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+		if err != nil {
+			return err
+		}
+		defer fd.Close()
+
+		err = MarshalLogIntoWriter(fd, &lg, p, n)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -416,6 +430,23 @@ func MarshalLogIntoWriter(logWr io.Writer, log *[]pb.Command, p, n uint64) error
 	// manually write an add-hoc EOL (end-of-log) mark
 	_, err = fmt.Fprintln(logWr, "\nEOL")
 	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalBufferedLogIntoWriter ...
+func MarshalBufferedLogIntoWriter(logWr io.Writer, log *[]pb.Command, p, n uint64) error {
+	buff := bytes.NewBuffer(nil)
+	buff.Grow(len(*log))
+
+	// utilize marshal on buff and write to log on a single call
+	err := MarshalLogIntoWriter(buff, log, p, n)
+	if err != nil {
+		return err
+	}
+
+	if _, err = buff.WriteTo(logWr); err != nil {
 		return err
 	}
 	return nil
