@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/Lz-Gustavo/beelog/pb"
 )
@@ -41,6 +42,10 @@ type ConcTable struct {
 	current   int
 	prevLog   int32 // atomic
 	logFolder string
+
+	msr, hold bool
+	latOut    *os.File
+	lat       time.Time
 }
 
 // NewConcTable ...
@@ -57,11 +62,14 @@ func NewConcTable(ctx context.Context) *ConcTable {
 	}
 
 	def := *DefaultLogConfig()
+	def.Alg = IterConcTable
 	for i := 0; i < defaultConcLvl; i++ {
 		ct.logs[i] = logData{config: &def}
 		ct.views[i] = make(minStateTable, 0)
 	}
 	ct.logFolder = extractLocation(def.Fname)
+
+	// Measure disabled in default config
 	go ct.handleReduce(c)
 	return ct
 }
@@ -92,6 +100,17 @@ func NewConcTableWithConfig(ctx context.Context, concLvl int, cfg *LogConfig) (*
 		ct.views[i] = make(minStateTable, 0)
 	}
 	ct.logFolder = extractLocation(cfg.Fname)
+
+	if cfg.Measure {
+		ct.msr = true
+		fn := ct.logFolder + strconv.Itoa(int(cfg.Period)) + "-latency.out"
+
+		fd, err := os.OpenFile(fn, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_TRUNC, 0644)
+		if err != nil {
+			return nil, err
+		}
+		ct.latOut = fd
+	}
 	go ct.handleReduce(c)
 	return ct, nil
 }
@@ -113,6 +132,9 @@ func (ct *ConcTable) Len() uint64 {
 
 // Log records the occurence of command 'cmd' on the provided index.
 func (ct *ConcTable) Log(cmd pb.Command) error {
+	if ct.msr {
+		ct.measureLat()
+	}
 	wrt := cmd.Op == pb.Command_SET
 	ct.curMu.Lock()
 	cur := ct.current
@@ -391,24 +413,13 @@ func (ct *ConcTable) handleReduce(ctx context.Context) {
 			if err != nil {
 				log.Fatalln("failed during reduce procedure, err:", err.Error())
 			}
-		}
-	}
-}
 
-func (ct *ConcTable) handleReduceAndMeasureLat(ctx context.Context) {
-	var count int
-	for {
-		select {
-		case <-ctx.Done():
-			return
-
-		case cur := <-ct.reduceReq:
-			err := ct.reduceLog(cur, &count)
-			if err != nil {
-				log.Fatalln("failed during reduce procedure, err:", err.Error())
+			if ct.msr {
+				_, err = ct.recordLatency()
+				if err != nil {
+					log.Fatalln("failed latency output, err:", err.Error())
+				}
 			}
-
-			// TODO: measure latency by terminating a timer started on Log() procedure
 		}
 	}
 }
@@ -520,9 +531,35 @@ func (ct *ConcTable) executeReduceAlgOnView(id int) ([]pb.Command, error) {
 	return nil, errors.New("unsupported reduce algorithm for a CircBuffHT structure")
 }
 
+func (ct *ConcTable) measureLat() bool {
+	// already holding a time value, reset only on 'recordLatency()' calls
+	if ct.hold {
+		return false
+	}
+	ct.lat = time.Now()
+	ct.hold = true
+	return true
+}
+
+func (ct *ConcTable) recordLatency() (bool, error) {
+	// do not record if not holding, time wasnt initialized
+	if !ct.hold {
+		return false, nil
+	}
+	_, err := fmt.Fprintf(ct.latOut, "%d\n", time.Since(ct.lat))
+	if err != nil {
+		return false, err
+	}
+	ct.hold = false
+	return true, nil
+}
+
 // Shutdown ...
 func (ct *ConcTable) Shutdown() {
 	ct.canc()
+	if ct.msr {
+		ct.latOut.Close()
+	}
 }
 
 // computes the modulu operation, returning the dividend signal result. In all cases

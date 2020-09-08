@@ -96,6 +96,43 @@ func TestConcTableRecovEntireLog(t *testing.T) {
 	}
 }
 
+func TestConcTableLatencyMeasurementAndSync(t *testing.T) {
+	nCmds, wrt, dif := uint64(2000), 50, 100
+	cfgs := []LogConfig{
+		{
+			Inmem:   false,
+			KeepAll: true,
+			Sync:    true,
+			Measure: true,
+			Alg:     IterConcTable,
+			Tick:    Interval,
+			Period:  200,
+			Fname:   "./logstate.log",
+		},
+	}
+
+	for _, cf := range cfgs {
+		// clean state before creating
+		err := cleanAllLogStates()
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		// latency is already recorded during generate
+		_, err = generateRandStructure(4, nCmds, wrt, dif, &cf)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+	}
+
+	if err := cleanAllLogStates(); err != nil {
+		t.Log(err.Error())
+		t.FailNow()
+	}
+}
+
 // deserializeRawLogStream emulates the same procedure implemented by a recov
 // replica, interpreting the serialized log stream received from RecovEntireLog
 // different calls.
