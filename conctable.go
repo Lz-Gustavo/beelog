@@ -43,9 +43,10 @@ type ConcTable struct {
 	prevLog   int32 // atomic
 	logFolder string
 
-	msr, hold bool
-	latOut    *os.File
-	lat       time.Time
+	msr    bool
+	hold   []bool
+	lat    []time.Time
+	latOut *os.File
 }
 
 // NewConcTable ...
@@ -59,6 +60,9 @@ func NewConcTable(ctx context.Context) *ConcTable {
 		views: make([]minStateTable, defaultConcLvl, defaultConcLvl),
 		mu:    make([]sync.Mutex, defaultConcLvl, defaultConcLvl),
 		logs:  make([]logData, defaultConcLvl, defaultConcLvl),
+
+		hold: make([]bool, defaultConcLvl, defaultConcLvl),
+		lat:  make([]time.Time, defaultConcLvl, defaultConcLvl),
 	}
 
 	def := *DefaultLogConfig()
@@ -93,6 +97,9 @@ func NewConcTableWithConfig(ctx context.Context, concLvl int, cfg *LogConfig) (*
 		views: make([]minStateTable, concLvl, concLvl),
 		mu:    make([]sync.Mutex, concLvl, concLvl),
 		logs:  make([]logData, concLvl, concLvl),
+
+		hold: make([]bool, concLvl, concLvl),
+		lat:  make([]time.Time, concLvl, concLvl),
 	}
 
 	for i := 0; i < concLvl; i++ {
@@ -132,12 +139,12 @@ func (ct *ConcTable) Len() uint64 {
 
 // Log records the occurence of command 'cmd' on the provided index.
 func (ct *ConcTable) Log(cmd pb.Command) error {
-	if ct.msr {
-		ct.measureLat()
-	}
 	wrt := cmd.Op == pb.Command_SET
 	ct.curMu.Lock()
 	cur := ct.current
+	if ct.msr {
+		ct.measureLat(cur)
+	}
 
 	willReduce, advance := ct.willRequireReduceOnView(wrt, cur)
 	if advance {
@@ -415,7 +422,7 @@ func (ct *ConcTable) handleReduce(ctx context.Context) {
 			}
 
 			if ct.msr {
-				_, err = ct.recordLatency()
+				_, err = ct.recordLatency(cur)
 				if err != nil {
 					log.Fatalln("failed latency output, err:", err.Error())
 				}
@@ -531,26 +538,26 @@ func (ct *ConcTable) executeReduceAlgOnView(id int) ([]pb.Command, error) {
 	return nil, errors.New("unsupported reduce algorithm for a CircBuffHT structure")
 }
 
-func (ct *ConcTable) measureLat() bool {
+func (ct *ConcTable) measureLat(id int) bool {
 	// already holding a time value, reset only on 'recordLatency()' calls
-	if ct.hold {
+	if ct.hold[id] {
 		return false
 	}
-	ct.lat = time.Now()
-	ct.hold = true
+	ct.lat[id] = time.Now()
+	ct.hold[id] = true
 	return true
 }
 
-func (ct *ConcTable) recordLatency() (bool, error) {
+func (ct *ConcTable) recordLatency(id int) (bool, error) {
 	// do not record if not holding, time wasnt initialized
-	if !ct.hold {
+	if !ct.hold[id] {
 		return false, nil
 	}
-	_, err := fmt.Fprintf(ct.latOut, "%d\n", time.Since(ct.lat))
+	_, err := fmt.Fprintf(ct.latOut, "%d\n", time.Since(ct.lat[id]))
 	if err != nil {
 		return false, err
 	}
-	ct.hold = false
+	ct.hold[id] = false
 	return true, nil
 }
 
