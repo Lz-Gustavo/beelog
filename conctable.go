@@ -15,7 +15,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/Lz-Gustavo/beelog/pb"
 )
@@ -43,10 +42,8 @@ type ConcTable struct {
 	prevLog   int32 // atomic
 	logFolder string
 
-	msr    bool
-	hold   []bool
-	lat    []time.Time
-	latOut *os.File
+	msr bool
+	lm  *LatencyMeasure
 }
 
 // NewConcTable ...
@@ -60,9 +57,6 @@ func NewConcTable(ctx context.Context) *ConcTable {
 		views: make([]minStateTable, defaultConcLvl, defaultConcLvl),
 		mu:    make([]sync.Mutex, defaultConcLvl, defaultConcLvl),
 		logs:  make([]logData, defaultConcLvl, defaultConcLvl),
-
-		hold: make([]bool, defaultConcLvl, defaultConcLvl),
-		lat:  make([]time.Time, defaultConcLvl, defaultConcLvl),
 	}
 
 	def := *DefaultLogConfig()
@@ -97,9 +91,6 @@ func NewConcTableWithConfig(ctx context.Context, concLvl int, cfg *LogConfig) (*
 		views: make([]minStateTable, concLvl, concLvl),
 		mu:    make([]sync.Mutex, concLvl, concLvl),
 		logs:  make([]logData, concLvl, concLvl),
-
-		hold: make([]bool, concLvl, concLvl),
-		lat:  make([]time.Time, concLvl, concLvl),
 	}
 
 	for i := 0; i < concLvl; i++ {
@@ -112,11 +103,10 @@ func NewConcTableWithConfig(ctx context.Context, concLvl int, cfg *LogConfig) (*
 		ct.msr = true
 		fn := ct.logFolder + strconv.Itoa(int(cfg.Period)) + "-latency.out"
 
-		fd, err := os.OpenFile(fn, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_TRUNC, 0644)
+		ct.lm, err = NewLatencyMeasure(concLvl, fn)
 		if err != nil {
 			return nil, err
 		}
-		ct.latOut = fd
 	}
 	go ct.handleReduce(c)
 	return ct, nil
@@ -143,7 +133,7 @@ func (ct *ConcTable) Log(cmd pb.Command) error {
 	ct.curMu.Lock()
 	cur := ct.current
 	if ct.msr {
-		ct.measureLat(cur)
+		ct.lm.measureInitLat(cur)
 	}
 
 	willReduce, advance := ct.willRequireReduceOnView(wrt, cur)
@@ -416,15 +406,23 @@ func (ct *ConcTable) handleReduce(ctx context.Context) {
 			return
 
 		case cur := <-ct.reduceReq:
-			err := ct.reduceLog(cur, &count)
-			if err != nil {
-				log.Fatalln("failed during reduce procedure, err:", err.Error())
-			}
-
 			if ct.msr {
-				_, err = ct.recordLatency(cur)
+				ct.lm.measureFillLat(cur)
+				err := ct.reduceLog(cur, &count)
+				if err != nil {
+					log.Fatalln("failed during reduce procedure, err:", err.Error())
+				}
+				ct.lm.measurePersLat(cur)
+
+				_, err = ct.lm.recordLatencyTuple(cur)
 				if err != nil {
 					log.Fatalln("failed latency output, err:", err.Error())
+				}
+
+			} else {
+				err := ct.reduceLog(cur, &count)
+				if err != nil {
+					log.Fatalln("failed during reduce procedure, err:", err.Error())
 				}
 			}
 		}
@@ -538,34 +536,11 @@ func (ct *ConcTable) executeReduceAlgOnView(id int) ([]pb.Command, error) {
 	return nil, errors.New("unsupported reduce algorithm for a CircBuffHT structure")
 }
 
-func (ct *ConcTable) measureLat(id int) bool {
-	// already holding a time value, reset only on 'recordLatency()' calls
-	if ct.hold[id] {
-		return false
-	}
-	ct.lat[id] = time.Now()
-	ct.hold[id] = true
-	return true
-}
-
-func (ct *ConcTable) recordLatency(id int) (bool, error) {
-	// do not record if not holding, time wasnt initialized
-	if !ct.hold[id] {
-		return false, nil
-	}
-	_, err := fmt.Fprintf(ct.latOut, "%d\n", time.Since(ct.lat[id]))
-	if err != nil {
-		return false, err
-	}
-	ct.hold[id] = false
-	return true, nil
-}
-
 // Shutdown ...
 func (ct *ConcTable) Shutdown() {
 	ct.canc()
 	if ct.msr {
-		ct.latOut.Close()
+		ct.lm.close()
 	}
 }
 
