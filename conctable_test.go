@@ -71,8 +71,8 @@ func TestConcTableRecovEntireLog(t *testing.T) {
 				t.Log("got one log:", log)
 				// TODO: test log...
 			}
-		} else {
 
+		} else {
 			raw, num, err := st.(*ConcTable).RecovEntireLog()
 			if err != nil {
 				t.Log(err.Error())
@@ -120,11 +120,12 @@ func TestConcTableLatencyMeasurementAndSync(t *testing.T) {
 		}
 
 		// latency is already recorded during generate
-		_, err = generateRandStructure(4, nCmds, wrt, dif, &cf)
+		st, err := generateRandStructure(4, nCmds, wrt, dif, &cf)
 		if err != nil {
 			t.Log(err.Error())
 			t.FailNow()
 		}
+		st.(*ConcTable).Shutdown()
 	}
 
 	if err := cleanAllLogStates(); err != nil {

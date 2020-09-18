@@ -43,7 +43,7 @@ type ConcTable struct {
 	logFolder string
 
 	msr bool
-	lm  *LatencyMeasure
+	lm  *latencyMeasure
 }
 
 // NewConcTable ...
@@ -102,8 +102,7 @@ func NewConcTableWithConfig(ctx context.Context, concLvl int, cfg *LogConfig) (*
 	if cfg.Measure {
 		ct.msr = true
 		fn := ct.logFolder + strconv.Itoa(int(cfg.Period)) + "-latency.out"
-
-		ct.lm, err = NewLatencyMeasure(concLvl, fn)
+		ct.lm, err = newLatencyMeasure(concLvl, fn)
 		if err != nil {
 			return nil, err
 		}
@@ -540,6 +539,7 @@ func (ct *ConcTable) executeReduceAlgOnView(id int) ([]pb.Command, error) {
 func (ct *ConcTable) Shutdown() {
 	ct.canc()
 	if ct.msr {
+		ct.lm.flush()
 		ct.lm.close()
 	}
 }
