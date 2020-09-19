@@ -35,16 +35,16 @@ type LogConfig struct {
 	Tick    ReduceInterval
 	Period  uint32
 	Fname   string
+
+	ParallelIO  bool
+	SecondFname string
 }
 
 // DefaultLogConfig ...
 func DefaultLogConfig() *LogConfig {
 	return &LogConfig{
-		Inmem:   true,
-		KeepAll: false,
-		Sync:    false,
-		Measure: false,
-		Tick:    Delayed,
+		Inmem: true,
+		Tick:  Delayed,
 	}
 }
 
@@ -55,6 +55,9 @@ func (lc *LogConfig) ValidateConfig() error {
 	}
 	if lc.Tick == Interval && lc.Period == 0 {
 		return errors.New("invalid config: if periodic reduce is set (i.e. Tick == Interval), a config.Period must be provided")
+	}
+	if lc.ParallelIO && lc.SecondFname == "" {
+		return errors.New("invalid config: if parallel io is set (i.e. ParallelIO == true), config.secondFname must be provided")
 	}
 	return nil
 }

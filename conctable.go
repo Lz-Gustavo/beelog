@@ -532,7 +532,7 @@ func (ct *ConcTable) executeReduceAlgOnView(id int) ([]pb.Command, error) {
 	case IterConcTable:
 		return IterConcTableOnView(&ct.views[id]), nil
 	}
-	return nil, errors.New("unsupported reduce algorithm for a CircBuffHT structure")
+	return nil, errors.New("unsupported reduce algorithm for a ConcTable structure")
 }
 
 // Shutdown ...

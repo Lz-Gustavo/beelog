@@ -12,7 +12,7 @@ const (
 	// Every measureInitLat invocation has a '1/measureChance' chance to set 'hold'
 	// value, and capturing timestamps for latency analysis until latency tuple is
 	// recorded.
-	measureChance int = 10
+	measureChance int = 1
 )
 
 // latencyMeasure holds auxiliar variables to implement an in-deep latency analysis

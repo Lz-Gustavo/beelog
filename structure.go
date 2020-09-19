@@ -110,6 +110,7 @@ type logData struct {
 	first, last uint64
 	recentLog   *[]pb.Command // used only on Immediately inmem config
 	count       uint32        // used on Interval config
+	secondary   bool          // used on ParallelIO
 }
 
 func (ld *logData) retrieveLog() ([]pb.Command, error) {
@@ -159,18 +160,26 @@ func (ld *logData) updateLogState(lg []pb.Command, p, n uint64) error {
 		return nil
 	}
 
-	var fn string
+	fn := ld.config.Fname
+	if ld.config.ParallelIO {
+		if ld.secondary {
+			// alternate to second fn
+			fn = ld.config.SecondFname
+			ld.secondary = false
+
+		} else {
+			// use second fn on next update
+			ld.secondary = true
+		}
+	}
+
 	if ld.config.KeepAll {
 		// create a new state and and filename at ld.config.Fname
-		sep := strings.SplitAfter(ld.config.Fname, ".")
+		sep := strings.SplitAfter(fn, ".")
 
 		// modify last index
 		sep[len(sep)-1] = strconv.FormatUint(n, 10) + ".log"
 		fn = strings.Join(sep, "")
-
-	} else {
-		// only update the current state at ld.config.Fname
-		fn = ld.config.Fname
 	}
 
 	if ld.config.Sync {

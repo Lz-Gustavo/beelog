@@ -5,7 +5,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Lz-Gustavo/beelog/pb"
 	"github.com/golang/protobuf/proto"
@@ -119,18 +121,69 @@ func TestConcTableLatencyMeasurementAndSync(t *testing.T) {
 			t.FailNow()
 		}
 
-		// latency is already recorded during generate
+		// latency is already recorded while being generated
 		st, err := generateRandStructure(4, nCmds, wrt, dif, &cf)
 		if err != nil {
 			t.Log(err.Error())
 			t.FailNow()
 		}
+
+		// persist latency metrics by during shutdown
 		st.(*ConcTable).Shutdown()
 	}
 
 	if err := cleanAllLogStates(); err != nil {
 		t.Log(err.Error())
 		t.FailNow()
+	}
+}
+
+func TestConcTableParallelIO(t *testing.T) {
+	nCmds, wrt, dif := uint64(800), 50, 200
+
+	primDir := t.TempDir()
+	secdDir := t.TempDir()
+	cfgs := []LogConfig{
+		{
+			KeepAll:     true,
+			Alg:         IterConcTable,
+			Tick:        Interval,
+			Period:      200,
+			Fname:       primDir + "/logstate.log",
+			ParallelIO:  true,
+			SecondFname: secdDir + "/logstate2.log",
+		},
+	}
+
+	for _, cf := range cfgs {
+		// log files should be interchanged between primary and second fns
+		_, err := generateRandStructure(4, nCmds, wrt, dif, &cf)
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		// must wait concurrent persistence...
+		time.Sleep(time.Second)
+
+		logsPrim, err := filepath.Glob(primDir + "/*.log")
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		logsSecd, err := filepath.Glob(secdDir + "/*.log")
+		if err != nil {
+			t.Log(err.Error())
+			t.FailNow()
+		}
+
+		if p, s := len(logsPrim), len(logsSecd); p != s {
+			t.Log("With an even interval config, expected primary and secondary locations to have the same number of log files")
+			t.Log("PRIMARY HAS:", p)
+			t.Log("SECONDARY HAS:", s)
+			t.FailNow()
+		}
 	}
 }
 
