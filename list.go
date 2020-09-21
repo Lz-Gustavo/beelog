@@ -159,7 +159,7 @@ func (l *ListHT) ReduceLog(p, n uint64) error {
 	if err != nil {
 		return err
 	}
-	return l.updateLogState(cmds, p, n)
+	return l.updateLogState(cmds, p, n, false)
 }
 
 // mayTriggerReduce possibly triggers the reduce algorithm based on config params

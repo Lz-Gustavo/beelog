@@ -110,7 +110,6 @@ type logData struct {
 	first, last uint64
 	recentLog   *[]pb.Command // used only on Immediately inmem config
 	count       uint32        // used on Interval config
-	secondary   bool          // used on ParallelIO
 }
 
 func (ld *logData) retrieveLog() ([]pb.Command, error) {
@@ -153,7 +152,7 @@ func (ld *logData) retrieveRawLog(p, n uint64) ([]byte, error) {
 	return logs, nil
 }
 
-func (ld *logData) updateLogState(lg []pb.Command, p, n uint64) error {
+func (ld *logData) updateLogState(lg []pb.Command, p, n uint64, secDisk bool) error {
 	if ld.config.Inmem {
 		// update the most recent inmem log state
 		ld.recentLog = &lg
@@ -161,16 +160,11 @@ func (ld *logData) updateLogState(lg []pb.Command, p, n uint64) error {
 	}
 
 	fn := ld.config.Fname
-	if ld.config.ParallelIO {
-		if ld.secondary {
-			// alternate to second fn
-			fn = ld.config.SecondFname
-			ld.secondary = false
-
-		} else {
-			// use second fn on next update
-			ld.secondary = true
+	if secDisk {
+		if !ld.config.ParallelIO {
+			return fmt.Errorf("can not persist to secondary disk if ParallelIO is unset")
 		}
+		fn = ld.config.SecondFname
 	}
 
 	if ld.config.KeepAll {

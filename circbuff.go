@@ -220,7 +220,7 @@ func (cb *CircBuffHT) ReduceLog(cp buffCopy) error {
 	if err != nil {
 		return err
 	}
-	return cb.updateLogState(cmds, cp.first, cp.last)
+	return cb.updateLogState(cmds, cp.first, cp.last, false)
 }
 
 // mayTriggerReduce possibly triggers the reduce algorithm based on config params

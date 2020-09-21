@@ -15,11 +15,15 @@ const (
 	measureChance int = 1
 )
 
+type latData struct {
+	init, fill, pers int64
+}
+
 // latencyMeasure holds auxiliar variables to implement an in-deep latency analysis
 // on ConcTable operations.
 type latencyMeasure struct {
 	hold   []bool
-	buff   *bytes.Buffer
+	data   []latData
 	latOut *os.File
 
 	initLat []time.Time
@@ -35,7 +39,7 @@ func newLatencyMeasure(concLvl int, filename string) (*latencyMeasure, error) {
 
 	return &latencyMeasure{
 		hold:   make([]bool, concLvl, concLvl),
-		buff:   bytes.NewBuffer(nil),
+		data:   make([]latData, 0),
 		latOut: fd,
 
 		initLat: make([]time.Time, concLvl, concLvl),
@@ -79,29 +83,28 @@ func (lm *latencyMeasure) recordLatencyTuple(id int) (bool, error) {
 	if !lm.hold[id] {
 		return false, nil
 	}
-	_, err := fmt.Fprintf(lm.buff, "%d,%d,%d\n", lm.initLat[id].UnixNano(), lm.fillLat[id].UnixNano(), lm.persLat[id].UnixNano())
-	if err != nil {
-		return false, err
-	}
-	lm.hold[id] = false
-	return true, nil
-}
 
-func (lm *latencyMeasure) recordLatency(id int) (bool, error) {
-	// do not record if not holding, time wasnt initialized
-	if !lm.hold[id] {
-		return false, nil
-	}
-	_, err := fmt.Fprintf(lm.buff, "%d\n", time.Since(lm.initLat[id]))
-	if err != nil {
-		return false, err
-	}
+	lm.data = append(lm.data, latData{
+		init: lm.initLat[id].UnixNano(),
+		fill: lm.fillLat[id].UnixNano(),
+		pers: lm.persLat[id].UnixNano(),
+	})
 	lm.hold[id] = false
 	return true, nil
 }
 
 func (lm *latencyMeasure) flush() error {
-	_, err := lm.buff.WriteTo(lm.latOut)
+	var err error
+	buff := bytes.NewBuffer(nil)
+
+	for _, d := range lm.data {
+		_, err = fmt.Fprintf(buff, "%d,%d,%d\n", d.init, d.fill, d.pers)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = buff.WriteTo(lm.latOut)
 	if err != nil {
 		return err
 	}

@@ -68,7 +68,7 @@ func NewConcTable(ctx context.Context) *ConcTable {
 	ct.logFolder = extractLocation(def.Fname)
 
 	// Measure disabled in default config
-	go ct.handleReduce(c)
+	go ct.handleReduce(c, false)
 	return ct
 }
 
@@ -107,7 +107,12 @@ func NewConcTableWithConfig(ctx context.Context, concLvl int, cfg *LogConfig) (*
 			return nil, err
 		}
 	}
-	go ct.handleReduce(c)
+	go ct.handleReduce(c, false)
+
+	// launch another reduce for secondary disk
+	if cfg.ParallelIO {
+		go ct.handleReduce(c, true)
+	}
 	return ct, nil
 }
 
@@ -131,7 +136,9 @@ func (ct *ConcTable) Log(cmd pb.Command) error {
 	wrt := cmd.Op == pb.Command_SET
 	ct.curMu.Lock()
 	cur := ct.current
-	if ct.msr {
+
+	// measure only on first batch commands
+	if ct.msr && ct.logs[cur].count == 0 {
 		ct.lm.measureInitLat(cur)
 	}
 
@@ -162,6 +169,10 @@ func (ct *ConcTable) Log(cmd pb.Command) error {
 	ct.logs[cur].last = cmd.Id
 
 	if willReduce {
+		if ct.msr {
+			ct.lm.measureFillLat(cur)
+		}
+
 		// mutext must be later unlocked by the reduce routine
 		ct.reduceReq <- cur
 	} else {
@@ -364,16 +375,16 @@ func (ct *ConcTable) RecovEntireLogConc() (<-chan []byte, int, error) {
 
 // persistView applies the configured algorithm on a specific view and updates
 // the latest log state into a new file.
-func (ct *ConcTable) persistView(id int) error {
+func (ct *ConcTable) persistView(id int, secDisk bool) error {
 	cmds, err := ct.executeReduceAlgOnView(id)
 	if err != nil {
 		return err
 	}
-	return ct.logs[id].updateLogState(cmds, ct.logs[id].first, ct.logs[id].last)
+	return ct.logs[id].updateLogState(cmds, ct.logs[id].first, ct.logs[id].last, secDisk)
 }
 
-func (ct *ConcTable) reduceLog(cur int, count *int) error {
-	err := ct.persistView(cur)
+func (ct *ConcTable) reduceLog(cur int, count *int, secDisk bool) error {
+	err := ct.persistView(cur, secDisk)
 	if err != nil {
 		return err
 	}
@@ -388,8 +399,9 @@ func (ct *ConcTable) reduceLog(cur int, count *int) error {
 		*count = 0
 	}
 
-	// update the last reduced index
-	atomic.StoreInt32(&ct.prevLog, int32(cur))
+	// update the last reduced index, its concurrently accessed by Recov procedures.
+	// TODO: uncomment once Recov are evaluated...
+	// atomic.StoreInt32(&ct.prevLog, int32(cur))
 
 	// clean 'cur' view state
 	ct.resetViewState(cur)
@@ -397,7 +409,7 @@ func (ct *ConcTable) reduceLog(cur int, count *int) error {
 	return nil
 }
 
-func (ct *ConcTable) handleReduce(ctx context.Context) {
+func (ct *ConcTable) handleReduce(ctx context.Context, secDisk bool) {
 	var count int
 	for {
 		select {
@@ -406,8 +418,7 @@ func (ct *ConcTable) handleReduce(ctx context.Context) {
 
 		case cur := <-ct.reduceReq:
 			if ct.msr {
-				ct.lm.measureFillLat(cur)
-				err := ct.reduceLog(cur, &count)
+				err := ct.reduceLog(cur, &count, secDisk)
 				if err != nil {
 					log.Fatalln("failed during reduce procedure, err:", err.Error())
 				}
@@ -419,7 +430,7 @@ func (ct *ConcTable) handleReduce(ctx context.Context) {
 				}
 
 			} else {
-				err := ct.reduceLog(cur, &count)
+				err := ct.reduceLog(cur, &count, secDisk)
 				if err != nil {
 					log.Fatalln("failed during reduce procedure, err:", err.Error())
 				}
@@ -486,17 +497,21 @@ func (ct *ConcTable) willRequireReduceOnView(wrt bool, id int) (bool, bool) {
 
 // mayExecuteLazyReduce triggers a reduce procedure if delayed config is set or first
 // 'config.Period' wasnt reached yet. Returns true if reduce was executed, false otherwise.
+//
+// TODO: currently 'false' is always passed to persist procedure, which basically flushes
+// and stores to the primary disk even if config.ParallelIO is set. Adjust recovery procedure
+// implications later.
 func (ct *ConcTable) mayExecuteLazyReduce(id int) (bool, error) {
 	if ct.logs[id].config.Tick == Delayed {
 		ct.mu[id].Lock()
-		err := ct.persistView(id)
+		err := ct.persistView(id, false)
 		if err != nil {
 			return true, err
 		}
 
 	} else if ct.logs[id].config.Tick == Interval && !ct.logs[id].firstReduceExists() {
 		ct.mu[id].Lock()
-		err := ct.persistView(id)
+		err := ct.persistView(id, false)
 		if err != nil {
 			return true, err
 		}

@@ -159,7 +159,7 @@ func (ar *ArrayHT) ReduceLog(p, n uint64) error {
 	if err != nil {
 		return err
 	}
-	return ar.updateLogState(cmds, p, n)
+	return ar.updateLogState(cmds, p, n, false)
 }
 
 // mayTriggerReduce possibly triggers the reduce algorithm based on config params
