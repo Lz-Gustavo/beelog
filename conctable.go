@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/Lz-Gustavo/beelog/pb"
 )
@@ -28,6 +30,12 @@ const (
 	resetOnImmediately int = 4000
 )
 
+// logEvent represents a event metadata passed to logger routines signalling a persistence
+// to a certain table, and the array position to store the measurement data.
+type logEvent struct {
+	table, measure int
+}
+
 // ConcTable ...
 type ConcTable struct {
 	views []minStateTable
@@ -36,16 +44,14 @@ type ConcTable struct {
 	canc  context.CancelFunc
 
 	concLevel int
-	reduceReq chan int
+	loggerReq chan logEvent
 	curMu     sync.Mutex
 	current   int
 	prevLog   int32 // atomic
 	logFolder string
 
-	msr      bool
-	absIndex uint32
-	interval uint32
-	lm       *latencyMeasure
+	msr bool
+	lm  *latencyMeasure
 }
 
 // NewConcTable ...
@@ -53,7 +59,7 @@ func NewConcTable(ctx context.Context) *ConcTable {
 	c, cancel := context.WithCancel(ctx)
 	ct := &ConcTable{
 		canc:      cancel,
-		reduceReq: make(chan int, chanBuffSize),
+		loggerReq: make(chan logEvent, chanBuffSize),
 		concLevel: defaultConcLvl,
 
 		views: make([]minStateTable, defaultConcLvl, defaultConcLvl),
@@ -87,7 +93,7 @@ func NewConcTableWithConfig(ctx context.Context, concLvl int, cfg *LogConfig) (*
 	c, cancel := context.WithCancel(ctx)
 	ct := &ConcTable{
 		canc:      cancel,
-		reduceReq: make(chan int, chanBuffSize),
+		loggerReq: make(chan logEvent, chanBuffSize),
 		concLevel: concLvl,
 
 		views: make([]minStateTable, concLvl, concLvl),
@@ -103,9 +109,8 @@ func NewConcTableWithConfig(ctx context.Context, concLvl int, cfg *LogConfig) (*
 
 	if cfg.Measure {
 		ct.msr = true
-		ct.interval = cfg.Period
 		fn := ct.logFolder + "bl-" + strconv.Itoa(int(cfg.Period)) + "-latency.out"
-		ct.lm, err = newLatencyMeasure(concLvl, fn)
+		ct.lm, err = newLatencyMeasure(concLvl, int(cfg.Period), fn)
 		if err != nil {
 			return nil, err
 		}
@@ -140,15 +145,12 @@ func (ct *ConcTable) Log(cmd pb.Command) error {
 	ct.curMu.Lock()
 	cur := ct.current
 
+	// first command
 	if ct.msr {
-		ct.absIndex++
-		if ct.absIndex%ct.interval == 1 {
-			// first command
-			ct.lm.measureInitLat(cur)
-
-		} else if ct.absIndex%ct.interval == 0 {
-			// last command
-			ct.lm.measureFillLat(cur)
+		ct.lm.absIndex++
+		if ct.lm.absIndex%ct.lm.interval == 1 && rand.Intn(measureChance) == 0 {
+			ct.lm.initLat[ct.lm.msrIndex] = time.Now().UnixNano()
+			ct.lm.drawn = true
 		}
 	}
 
@@ -160,6 +162,17 @@ func (ct *ConcTable) Log(cmd pb.Command) error {
 	// must acquire view mutex before releasing cursor to ensure safety
 	ct.mu[cur].Lock()
 	ct.curMu.Unlock()
+
+	if ct.msr && ct.lm.drawn {
+		if ct.lm.absIndex%ct.lm.interval == 1 {
+			// first command was written into table
+			ct.lm.writeLat[ct.lm.msrIndex] = time.Now().UnixNano()
+
+		} else if ct.lm.absIndex%ct.lm.interval == 0 && ct.lm.drawn {
+			// last command, table filled
+			ct.lm.fillLat[ct.lm.msrIndex] = time.Now().UnixNano()
+		}
+	}
 
 	// adjust first structure index
 	if !ct.logs[cur].logged {
@@ -179,8 +192,16 @@ func (ct *ConcTable) Log(cmd pb.Command) error {
 	ct.logs[cur].last = cmd.Id
 
 	if willReduce {
-		// mutext must be later unlocked by the reduce routine
-		ct.reduceReq <- cur
+		// mutext will be later unlocked by the logger routine
+		if ct.msr && ct.lm.drawn {
+			ct.loggerReq <- logEvent{cur, ct.lm.msrIndex}
+			ct.lm.msrIndex++
+			ct.lm.drawn = false
+
+		} else {
+			ct.loggerReq <- logEvent{cur, -1}
+		}
+
 	} else {
 		ct.mu[cur].Unlock()
 	}
@@ -379,9 +400,9 @@ func (ct *ConcTable) RecovEntireLogConc() (<-chan []byte, int, error) {
 	return out, len(fs), nil
 }
 
-// persistView applies the configured algorithm on a specific view and updates
+// persistTable applies the configured algorithm on a specific view and updates
 // the latest log state into a new file.
-func (ct *ConcTable) persistView(id int, secDisk bool) error {
+func (ct *ConcTable) persistTable(id int, secDisk bool) error {
 	cmds, err := ct.executeReduceAlgOnView(id)
 	if err != nil {
 		return err
@@ -390,7 +411,7 @@ func (ct *ConcTable) persistView(id int, secDisk bool) error {
 }
 
 func (ct *ConcTable) reduceLog(cur int, count *int, secDisk bool) error {
-	err := ct.persistView(cur, secDisk)
+	err := ct.persistTable(cur, secDisk)
 	if err != nil {
 		return err
 	}
@@ -422,24 +443,15 @@ func (ct *ConcTable) handleReduce(ctx context.Context, secDisk bool) {
 		case <-ctx.Done():
 			return
 
-		case cur := <-ct.reduceReq:
-			if ct.msr {
-				err := ct.reduceLog(cur, &count, secDisk)
-				if err != nil {
-					log.Fatalln("failed during reduce procedure, err:", err.Error())
-				}
-				ct.lm.measurePersLat(cur)
+		case event := <-ct.loggerReq:
+			err := ct.reduceLog(event.table, &count, secDisk)
+			if err != nil {
+				log.Fatalln("failed during reduce procedure, err:", err.Error())
+			}
 
-				_, err = ct.lm.recordLatencyTuple(cur)
-				if err != nil {
-					log.Fatalln("failed latency output, err:", err.Error())
-				}
-
-			} else {
-				err := ct.reduceLog(cur, &count, secDisk)
-				if err != nil {
-					log.Fatalln("failed during reduce procedure, err:", err.Error())
-				}
+			// requested latency measurement for persist
+			if event.measure != -1 {
+				ct.lm.perstLat[event.measure] = time.Now().UnixNano()
 			}
 		}
 	}
@@ -473,7 +485,7 @@ func (ct *ConcTable) mayTriggerReduceOnView(id int) {
 	if ct.logs[id].count >= ct.logs[id].config.Period {
 		ct.logs[id].count = 0
 		// trigger reduce on view
-		ct.reduceReq <- id
+		ct.loggerReq <- logEvent{id, -1}
 	}
 }
 
@@ -510,14 +522,14 @@ func (ct *ConcTable) willRequireReduceOnView(wrt bool, id int) (bool, bool) {
 func (ct *ConcTable) mayExecuteLazyReduce(id int) (bool, error) {
 	if ct.logs[id].config.Tick == Delayed {
 		ct.mu[id].Lock()
-		err := ct.persistView(id, false)
+		err := ct.persistTable(id, false)
 		if err != nil {
 			return true, err
 		}
 
 	} else if ct.logs[id].config.Tick == Interval && !ct.logs[id].firstReduceExists() {
 		ct.mu[id].Lock()
-		err := ct.persistView(id, false)
+		err := ct.persistTable(id, false)
 		if err != nil {
 			return true, err
 		}
