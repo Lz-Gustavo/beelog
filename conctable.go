@@ -42,8 +42,10 @@ type ConcTable struct {
 	prevLog   int32 // atomic
 	logFolder string
 
-	msr bool
-	lm  *latencyMeasure
+	msr      bool
+	absIndex uint32
+	interval uint32
+	lm       *latencyMeasure
 }
 
 // NewConcTable ...
@@ -101,7 +103,8 @@ func NewConcTableWithConfig(ctx context.Context, concLvl int, cfg *LogConfig) (*
 
 	if cfg.Measure {
 		ct.msr = true
-		fn := ct.logFolder + strconv.Itoa(int(cfg.Period)) + "-latency.out"
+		ct.interval = cfg.Period
+		fn := ct.logFolder + "bl-" + strconv.Itoa(int(cfg.Period)) + "-latency.out"
 		ct.lm, err = newLatencyMeasure(concLvl, fn)
 		if err != nil {
 			return nil, err
@@ -137,9 +140,16 @@ func (ct *ConcTable) Log(cmd pb.Command) error {
 	ct.curMu.Lock()
 	cur := ct.current
 
-	// measure only on first batch commands
-	if ct.msr && ct.logs[cur].count == 0 {
-		ct.lm.measureInitLat(cur)
+	if ct.msr {
+		ct.absIndex++
+		if ct.absIndex%ct.interval == 1 {
+			// first command
+			ct.lm.measureInitLat(cur)
+
+		} else if ct.absIndex%ct.interval == 0 {
+			// last command
+			ct.lm.measureFillLat(cur)
+		}
 	}
 
 	willReduce, advance := ct.willRequireReduceOnView(wrt, cur)
@@ -169,10 +179,6 @@ func (ct *ConcTable) Log(cmd pb.Command) error {
 	ct.logs[cur].last = cmd.Id
 
 	if willReduce {
-		if ct.msr {
-			ct.lm.measureFillLat(cur)
-		}
-
 		// mutext must be later unlocked by the reduce routine
 		ct.reduceReq <- cur
 	} else {
