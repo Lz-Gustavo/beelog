@@ -148,7 +148,7 @@ func (ct *ConcTable) Log(cmd pb.Command) error {
 	// first command
 	if ct.msr {
 		ct.lm.absIndex++
-		if ct.lm.absIndex%ct.lm.interval == 1 && rand.Intn(measureChance) == 0 {
+		if (ct.lm.absIndex%ct.lm.interval == 1 || ct.lm.interval == 1) && rand.Intn(measureChance) == 0 {
 			ct.lm.initLat[ct.lm.msrIndex] = time.Now().UnixNano()
 			ct.lm.drawn = true
 		}
@@ -168,7 +168,13 @@ func (ct *ConcTable) Log(cmd pb.Command) error {
 			// first command was written into table
 			ct.lm.writeLat[ct.lm.msrIndex] = time.Now().UnixNano()
 
-		} else if ct.lm.absIndex%ct.lm.interval == 0 && ct.lm.drawn {
+		} else if ct.lm.interval == 1 {
+			// special case of first and last command, which does not fall
+			// on first condition
+			ct.lm.writeLat[ct.lm.msrIndex] = time.Now().UnixNano()
+			ct.lm.fillLat[ct.lm.msrIndex] = time.Now().UnixNano()
+
+		} else if ct.lm.absIndex%ct.lm.interval == 0 {
 			// last command, table filled
 			ct.lm.fillLat[ct.lm.msrIndex] = time.Now().UnixNano()
 		}
